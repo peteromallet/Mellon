@@ -120,14 +120,14 @@ class BlendImages(NodeBase):
         blend = source * amount + target * (1 - amount)
         blend = toPIL(blend)
 
-        self.output['blend'] = blend
+        return { 'blend': blend }
 ```
 
-It's important to extend your class from `NodeBase` class. That will take care of the basic validation, but technically you can build your own class.
+It's important to extend your class from `NodeBase` class. That will take care of the basic validation, but technically you can build your own validation as long as the class has `__init__` and `__call__` methods.
 
 The `execute` method expects all the parameters defined in the `MODULE_MAP`. In this case `source`, `target` and `amount`.
 
-Note that `blend` is defined as an output parameter. The `execute` method must set the value to the `output` dictionary: `self.output['blend'] = blend`. That will be the result and the output of the node.
+Note that `blend` is defined as an output parameter. The `execute` method should return a dictionary containing the `blend` key: `return { 'blend': blend }`.
 
 You can change the name of the callback by setting the `CALLBACK` class attribute.
 

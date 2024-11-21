@@ -171,7 +171,7 @@ class WebServer:
                     
                     if "display" in params[p] and params[p]["display"] == "ui":
                         # store ui fields that need to be sent back to the client
-                        ui_fields[p] = { "source": source_key, "type": params[source_key]["type"] }
+                        ui_fields[p] = { "source": source_key, "type": params[p]["type"] }
                     else:
                         args[p] = self.node_store[source_id].output[source_key] if source_id else params[p]["value"] if 'value' in params[p] else None
 

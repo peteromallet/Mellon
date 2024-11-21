@@ -14,8 +14,9 @@ class Preview(NodeBase):
     def execute(self, images, vae):
         if isinstance(images, Image.Image):
             # TODO: support multiple images
-            self.output['images'] = images[0] if isinstance(images, list) else images
-            return
+            return { 'images_out': images[0] if isinstance(images, list) else images,
+                     'width': images.width,
+                     'height': images.height }
         
         if not vae:
             raise ValueError("VAE is required to decode latents")
@@ -33,13 +34,14 @@ class Preview(NodeBase):
         images = (images / 2 + 0.5).clamp(0, 1).to('cpu')
         images = toPIL(images)
 
-        self.output['images'] = images
+        return { 'images_out': images,
+                 'width': images.width,
+                 'height': images.height }
 
 
 class LoadImage(NodeBase):
     def execute(self, path):
-        self.output['images'] = Image.open(path)
-
+        return { 'images': Image.open(path) }
 
 
 class SaveImage(NodeBase):
@@ -47,6 +49,8 @@ class SaveImage(NodeBase):
         # save all the images in the list
         for i, image in enumerate(images):
             image.save(f"image_{i}.webp")
+
+        return
 
 
 # NOT implemented
@@ -57,4 +61,4 @@ class BlendImages(NodeBase):
         blend = source * amount + target * (1 - amount)
         blend = toPIL(blend)
 
-        self.output['blend'] = blend
+        return { 'blend': blend }

@@ -9,16 +9,32 @@ MODULE_MAP = {
                 'display': 'input',
                 'type': ['image', 'latent'],
             },
+            'images_out': {
+                'label': 'Images',
+                'display': 'output',
+                'type': 'image',
+            },
             'preview': {
                 'label': 'Preview',
                 'display': 'ui',
-                'source': 'images',
+                'source': 'images_out',
+                'type': 'image',
             },
             'vae': {
                 'label': 'VAE',
                 'display': 'input',
                 'type': 'VAE',
                 'description': 'VAE to decode latents. Required only if input images are latents.',
+            },
+            'width': {
+                'label': 'Width',
+                'type': 'int',
+                'display': 'output',
+            },
+            'height': {
+                'label': 'Height',
+                'type': 'int',
+                'display': 'output',
             },
         },
     },

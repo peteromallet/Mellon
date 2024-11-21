@@ -49,7 +49,16 @@ class NodeBase():
         if self._has_changed(values):
             self.params.update(values)
             
-            getattr(self, self.CALLBACK)(**self.params)
+            output = getattr(self, self.CALLBACK)(**self.params)
+
+            if isinstance(output, dict):
+                # Overwrite output values only for existing keys
+                #self.output.update({k: output[k] for k in self.output if k in output})
+                self.output = output
+            else:
+                # If only a single value is returned, assign it to the first element of self.output
+                first_key = next(iter(self.output))
+                self.output[first_key] = output
 
         self._execution_time = time.time() - execution_time
 
