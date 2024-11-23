@@ -24,7 +24,7 @@ def compare_values(a, b):
     
     # if only one is a tensor, they are certainly different
     if isinstance(a, torch.Tensor) or isinstance(b, torch.Tensor):
-        return True
+        return False
     
     # TODO: probably need to add support for other types
 

@@ -65,7 +65,7 @@ class SDSampler(NodeBase):
             block_out_channels=[128, 256, 512, 512],
             layers_per_block=2,
             latent_channels=4,
-        ) # TODO: do we need any more values for a dummy vae?
+        ) # TODO: do we need any more (or less) values for a dummy vae?
 
         # TODO: does this really load only the config?
         pipe = StableDiffusionPipeline.from_pretrained(

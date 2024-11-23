@@ -9,6 +9,7 @@ from importlib import import_module
 import torch
 import logging
 import asyncio
+#import traceback
 logger = logging.getLogger('mellon')
 
 class WebServer:
@@ -76,6 +77,8 @@ class WebServer:
                 await self.graph_execution(graph)
             except Exception as e:
                 logger.error(f"Error processing queue task: {str(e)}")
+                # display line number and file where the error occurred
+                #logger.error(f"Error occurred in {traceback.format_exc()}")
             finally:
                 self.queue.task_done()
 
@@ -159,6 +162,8 @@ class WebServer:
             for node in path:
                 module_name = nodes[node]["module"]
                 action_name = nodes[node]["action"]
+                logger.debug(f"Executing node {node} ({module_name}.{action_name})")
+
                 params = nodes[node]["params"]
                 ui_fields = {}
                 args = {}

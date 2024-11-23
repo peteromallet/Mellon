@@ -8,3 +8,5 @@ git+https://github.com/huggingface/diffusers
 transformers
 accelerate
 safetensors
+protobuf
+sentencepiece
