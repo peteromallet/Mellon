@@ -15,13 +15,14 @@ class CLIPTextEncoderLoader(NodeBase):
             text_encoder = CLIPTextModelWithProjection.from_pretrained(model_id, subfolder="text_encoder", torch_dtype=dtype)
             tokenizer = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer", torch_dtype=dtype)
 
-        # for SDXL load the secondary text encoder and tokenizer from the subfolder
-        if any('text_encoder_2/' in file for file in files):
-            text_encoder_2 = CLIPTextModelWithProjection.from_pretrained(model_id, subfolder="text_encoder_2", torch_dtype=dtype)
-            tokenizer_2 = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer_2", torch_dtype=dtype)
+            # for SDXL load the secondary text encoder and tokenizer from the subfolder
+            if any('text_encoder_2/' in file for file in files):
+                text_encoder_2 = CLIPTextModelWithProjection.from_pretrained(model_id, subfolder="text_encoder_2", torch_dtype=dtype)
+                tokenizer_2 = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer_2", torch_dtype=dtype)
+
         
         # if no encoder was found, try to load the encoder from the root
-        if text_encoder is None and text_encoder_2 is None:
+        else:
             text_encoder = CLIPTextModelWithProjection.from_pretrained(model_id, torch_dtype=dtype)
             tokenizer = CLIPTokenizer.from_pretrained(model_id, torch_dtype=dtype)
 

@@ -21,17 +21,18 @@ class Preview(NodeBase):
         if not vae:
             raise ValueError("VAE is required to decode latents")
 
-        latents = 1 / vae['model'].config['scaling_factor'] * images
+        device = vae['device']
+        vae = self.mm_load(vae['model'], device)
+
+        latents = 1 / vae.config['scaling_factor'] * images
 
         #with torch.no_grad():
         with torch.inference_mode():
-            images = vae['model'].to(vae['device']) \
-                .decode(latents.to(vae['device'], dtype=vae['model'].dtype), return_dict=False)[0][0]
+            images = vae.decode(latents.to(device, dtype=vae.dtype), return_dict=False)[0][0]
 
         del latents
-        vae['model'] = vae['model'].to('cpu')
 
-        images = (images / 2 + 0.5).clamp(0, 1).to('cpu')
+        images = (images / 2 + 0.5).to('cpu')
         images = toPIL(images)
 
         return { 'images_out': images,

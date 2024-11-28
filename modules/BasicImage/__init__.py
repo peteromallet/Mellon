@@ -14,18 +14,6 @@ MODULE_MAP = {
                 'display': 'output',
                 'type': 'image',
             },
-            'preview': {
-                'label': 'Preview',
-                'display': 'ui',
-                'source': 'images_out',
-                'type': 'image',
-            },
-            'vae': {
-                'label': 'VAE',
-                'display': 'input',
-                'type': 'VAE',
-                'description': 'VAE to decode latents. Required only if input images are latents.',
-            },
             'width': {
                 'label': 'Width',
                 'type': 'int',
@@ -35,6 +23,18 @@ MODULE_MAP = {
                 'label': 'Height',
                 'type': 'int',
                 'display': 'output',
+            },
+            'preview': {
+                'label': 'Preview',
+                'display': 'ui',
+                'source': 'images_out',
+                'type': 'image',
+            },
+            'vae': {
+                'label': 'VAE',
+                'display': 'input',
+                'type': 'vae',
+                'description': 'VAE to decode latents. Required only if input images are latents.',
             },
         },
     },

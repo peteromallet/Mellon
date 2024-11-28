@@ -12,7 +12,7 @@ class LoadUNet(NodeBase):
             variant=variant,
             use_safetensors=use_safetensors,
             subfolder="unet",
-        )
+        )      
  
         return { 'unet': { 'model': model, 'device': device }}
 
@@ -26,12 +26,6 @@ class LoadTextEncoder(NodeBase):
         tokenizer = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer" if not model_id.endswith("clip-vit-large-patch14") else '')
 
         return { 'clip': { 'text_encoder': text_encoder, 'tokenizer': tokenizer, 'device': device } }
-
-class LoadVAE(NodeBase): 
-    def execute(self, model_id, device):
-        vae = AutoencoderKL.from_pretrained(model_id, subfolder="vae")
-
-        return { 'vae': { 'model': vae, 'device': device } }
 
 class TextEncoder(NodeBase):
     def execute(self, prompt, clip):

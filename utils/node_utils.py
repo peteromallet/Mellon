@@ -1,6 +1,8 @@
 from modules import MODULE_MAP
 import torch
 import time
+from utils.memory_manager import memory_flush, memory_manager
+import nanoid
 
 def get_module_params(module_name, class_name):
     params = MODULE_MAP[module_name][class_name]['params'] if module_name in MODULE_MAP and class_name in MODULE_MAP[module_name] else {}
@@ -17,28 +19,53 @@ def filter_params(params, args):
 def has_changed(params, args):
     return any(params.get(key) != args.get(key) for key in args if key in params)
 
-def compare_values(a, b):
-    # if both are tensors
-    if isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor):
-        return not torch.equal(a, b)
+def are_different(a, b):
+    # check if the types are different
+    if type(a) != type(b):
+        return True
     
-    # if only one is a tensor, they are certainly different
-    if isinstance(a, torch.Tensor) or isinstance(b, torch.Tensor):
-        return False
-    
-    # TODO: probably need to add support for other types
+    # check if the lengths are different
+    if isinstance(a, (list, tuple)):
+        if len(a) != len(b):
+            return True
+        
+        for x, y in zip(a, b):
+            return are_different(x, y)
 
-    return a != b
+    if isinstance(a, dict):
+        if a.keys() != b.keys():
+            return True
+
+        for key in a:
+            return are_different(a[key], b[key])
+
+    if hasattr(a, 'dtype'):
+        if not hasattr(b, 'dtype') or a.dtype != b.dtype:
+            return True
+
+    if hasattr(a, 'shape'):
+        if not hasattr(b, 'shape') or not torch.equal(a, b):
+            return True
+    
+    if hasattr(a, '__dict__') and hasattr(b, '__dict__'):
+        return are_different(a.__dict__, b.__dict__)
+    
+    if a != b:
+        return True
+
+    return False
 
 class NodeBase():
     CALLBACK = 'execute'
 
-    def __init__(self):
+    def __init__(self, node_id):
+        self.node_id = node_id
         self.module_name = self.__class__.__module__.split('.')[-1]
         self.class_name = self.__class__.__name__
         self.params = {}
         self.output = get_module_output(self.module_name, self.class_name)
-
+        
+        self._mm_model_ids = []
         self._execution_time = 0
 
     def __call__(self, **kwargs):
@@ -48,28 +75,44 @@ class NodeBase():
 
         if self._has_changed(values):
             self.params.update(values)
-            
-            output = getattr(self, self.CALLBACK)(**self.params)
+
+            # delete previously loaded models
+            # TODO: delete a model only if something changed about it
+            if self._mm_model_ids:
+                memory_manager.delete_model(self._mm_model_ids)
+                self._mm_model_ids = []
+
+            try:
+                output = getattr(self, self.CALLBACK)(**self.params)
+            except Exception as e:
+                self.params = {}
+                self.output = get_module_output(self.module_name, self.class_name)
+                memory_flush(gc_collect=True)
+                raise e
 
             if isinstance(output, dict):
                 # Overwrite output values only for existing keys
                 #self.output.update({k: output[k] for k in self.output if k in output})
                 self.output = output
             else:
-                # If only a single value is returned, assign it to the first element of self.output
+                # If only a single value is returned, assign it to the first output
                 first_key = next(iter(self.output))
                 self.output[first_key] = output
 
         self._execution_time = time.time() - execution_time
 
+        # for good measure, flush the memory
+        memory_flush()
+
         return self.output
 
     def __del__(self):
-        del self.params, self.output
+        del self.params, self.output # TODO: check if this actually works with cuda
 
-        # TODO: this is very aggressive because it will clean the cache even if the node doesn't use pytorch or cuda
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if self._mm_model_ids:
+            memory_manager.delete_model(self._mm_model_ids)
+
+        memory_flush(gc_collect=True)
 
     def _validate_params(self, values):
         # get the parameters schema for the module/class
@@ -95,9 +138,9 @@ class NodeBase():
                 elif type.startswith('bool'):
                     values[key] = bool(values[key])
                 elif type.startswith('str'):
-                    values[key] = str(values[key])
+                    values[key] = str(values[key]) if values[key] is not None else ''
 
-        # we perform a second pass to for cross parameter validation when calling the postProcess function
+        # we perform a second pass for cross parameter validation when calling the postProcess function
         for key in values:
             # ensure the value is a valid option (mostly for dropdowns)
             if 'options' in schema[key]:
@@ -126,6 +169,23 @@ class NodeBase():
     def _has_changed(self, values):
         return any(
             key not in self.params or
-            compare_values(self.params.get(key), values.get(key))
+            are_different(self.params.get(key), values.get(key))
             for key in values
         )
+    
+    def mm_add(self, model, model_id=None, device=None, priority=2):
+        model_id = f'{self.node_id}.{model_id}' if model_id else f'{self.node_id}.{nanoid.generate(size=8)}'
+        device = device if device else str(model.device)
+
+        self._mm_model_ids.append(model_id)
+        return memory_manager.add_model(model, model_id, device=device, priority=priority)
+
+    def mm_load(self, model_id, device):
+        return memory_manager.load_model(model_id, device) if model_id else None
+
+    def mm_unload(self, model_id):
+        return memory_manager.unload_model(model_id) if model_id else None
+
+    def mm_update(self, model_id, model=None, priority=None):
+        return memory_manager.update_model(model_id, model=model, priority=priority) if model_id else None
+    

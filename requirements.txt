@@ -10,3 +10,4 @@ accelerate
 safetensors
 protobuf
 sentencepiece
+einops

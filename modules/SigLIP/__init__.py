@@ -1,25 +1,24 @@
 from utils.torch_utils import device_list, default_device
-import torch
 
 MODULE_MAP = {
-    'CLIPTextEncoderLoader': {
-        'label': 'Load CLIP Text Encoders',
-        'description': 'Load CLIP Text and Tokenizer encoders',
-        'category': 'clip',
+    'SigLIPLoader': {
+        'label': 'SigLIP Model Loader',
+        'description': 'Load the SigLIP model',
         'params': {
-            'clip_text_encoders': {
-                'label': 'Text Encoders',
+            'siglip_encoders': {
+                'label': 'SigLIP Encoders',
                 'display': 'output',
-                'type': 'CLIPTextEncoders',
+                'type': 'SigLIPEncoders',
             },
             'model_id': {
                 'label': 'Model ID',
                 'type': 'string',
+                'default': 'google/siglip-so400m-patch14-384',
             },
             'dtype': {
                 'label': 'Dtype',
                 'type': 'string',
-                'options': ['auto', 'float32', 'float16', 'bfloat16', 'float8_e4m3fn'],
+                'options': [ 'auto', 'float32', 'float16', 'bfloat16', 'float8_e4m3fn' ],
                 'default': 'auto',
             },
             'device': {

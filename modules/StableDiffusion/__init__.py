@@ -75,29 +75,6 @@ MODULE_MAP = {
         },
     },
 
-    'LoadVAE': {
-        'label': 'VAE Loader',
-        'description': 'Load the VAE of a Stable Diffusion model',
-        'params': {
-            'vae': {
-                'label': 'VAE',
-                'display': 'output',
-                'type': 'VAE',
-            },
-            'model_id': {
-                'label': 'Model ID',
-                'type': 'string',
-                'description': 'The ID of the model to use',
-            },
-            'device': {
-                'label': 'Device',
-                'type': 'string',
-                'options': device_list,
-                'default': default_device,
-            },
-        },
-    },
-
     'TextEncoder': {
         'label': 'CLIP Text Encoder',
         'description': 'Encodes text into a vector space',

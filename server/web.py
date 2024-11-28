@@ -8,9 +8,11 @@ import re
 from importlib import import_module
 import torch
 import logging
-import asyncio
-#import traceback
 logger = logging.getLogger('mellon')
+import asyncio
+import traceback
+from utils.memory_manager import memory_flush
+
 
 class WebServer:
     def __init__(self, module_map: dict, host: str = "0.0.0.0", port: int = 8080, cors: bool = False, cors_route: str = "*"):
@@ -78,7 +80,7 @@ class WebServer:
             except Exception as e:
                 logger.error(f"Error processing queue task: {str(e)}")
                 # display line number and file where the error occurred
-                #logger.error(f"Error occurred in {traceback.format_exc()}")
+                logger.error(f"Error occurred in {traceback.format_exc()}")
             finally:
                 self.queue.task_done()
 
@@ -124,20 +126,18 @@ class WebServer:
     
     async def clear_node_cache(self, request):
         data = await request.json()
+        nodeId = []
 
         if "nodeId" in data:
             nodeId = data["nodeId"] if isinstance(data["nodeId"], list) else [data["nodeId"]]
-
-            for node in nodeId:
-                if node in self.node_store:
-                    del self.node_store[node]
         else:
-            # clear the entire cache, send all the node ids to the client
             nodeId = list(self.node_store.keys())
-            self.node_store = {} # TODO: is this garbage collection friendly?
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        for node in nodeId:
+            if node in self.node_store:
+                del self.node_store[node]
+
+        memory_flush(gc_collect=True)
 
         return web.json_response({
             "type": "cacheCleared",
@@ -191,7 +191,7 @@ class WebServer:
 
                 # if the node is not in the node store, initialize it
                 if node not in self.node_store:
-                    self.node_store[node] = action()
+                    self.node_store[node] = action(node)
 
                 if not callable(self.node_store[node]):
                     raise TypeError(f"The class `{module_name}.{action_name}` is not callable. Ensure that the class has a __call__ method or extent it from `NodeBase`.")

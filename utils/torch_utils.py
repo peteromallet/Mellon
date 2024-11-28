@@ -1,6 +1,5 @@
 import torch
 from torchvision.transforms import v2 as tt
-from PIL import Image
 
 def list_devices():
     host = ""  # TODO: support multiple hosts
@@ -11,7 +10,8 @@ def list_devices():
         "index": 0,
         "device": "cpu",
         "host": host,
-        "label": (host) + "cpu",
+        "label": host + "cpu",
+        "total_memory": None,
         #"name": "CPU"
     } # TODO: probably need to support multiple cpus
 
@@ -26,11 +26,12 @@ def list_devices():
                 "index": i,
                 "device": f"cuda:{i}",
                 "host": host,
-                "label": (host) + f"cuda:{i}",
+                "label": host + f"cuda:{i}",
+                "total_memory": torch.cuda.get_device_properties(i).total_memory,
                 #"name": f"{torch.cuda.get_device_properties(i).name}"
             }
 
-        devices[f"{host}.cpu"] = cpu
+        devices[f"{host}cpu"] = cpu
 
     elif torch.mps.is_available():
         key = f"{host}mps"
@@ -39,12 +40,13 @@ def list_devices():
             "index": 0,
             "device": "mps",
             "host": host,
-            "label": (host) + "mps",
+            "label": host + "mps",
+            "total_memory": None,
             #"name": "MPS"
         }
 
     else:
-        key = f"{host}.cpu"
+        key = f"{host}cpu"
         default_device = key
         devices[key] = cpu
 
@@ -52,8 +54,8 @@ def list_devices():
 
 device_list, default_device = list_devices()
 
-def toTensor(image: Image.Image):
+def toTensor(image):
     return tt.PILToTensor()(image) / 255.0
 
-def toPIL(tensor: torch.Tensor):
+def toPIL(tensor):
     return tt.ToPILImage()(tensor.clamp(0, 1))
