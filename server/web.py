@@ -12,7 +12,7 @@ logger = logging.getLogger('mellon')
 import asyncio
 import traceback
 from utils.memory_manager import memory_flush
-
+from copy import deepcopy
 
 class WebServer:
     def __init__(self, module_map: dict, host: str = "0.0.0.0", port: int = 8080, cors: bool = False, cors_route: str = "*"):
@@ -102,20 +102,20 @@ class WebServer:
         nodes = {}
         for module_name, actions in self.module_map.items():
             for action_name, action in actions.items():
-                if 'params' not in action:
-                    action['params'] = {}
-                else:
+                params = {}
+                if 'params' in action:
+                    params = deepcopy(action['params'])
                     # remove attributes that are not needed by the client
-                    for p in action['params']:
-                        if 'postProcess' in action['params'][p]:
-                            del action['params'][p]['postProcess']
+                    for p in params:
+                        if 'postProcess' in params[p]:
+                            del params[p]['postProcess']
 
                 nodes[f"{module_name}-{action_name}"] = {
                     "label": action['label'] if 'label' in action else f"{module_name}: {action_name}",
                     "module": module_name,
                     "action": action_name,
                     "category": self.slugify(action['category']) if 'category' in action else "default",
-                    "params": action['params'],
+                    "params": params,
                     #"output": action['output'] if 'output' in action else {},
                     #"ui": action['ui'] if 'ui' in action else {},
                 }
