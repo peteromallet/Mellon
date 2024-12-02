@@ -16,6 +16,12 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+On Windows before the requirements you need to install torch for your platform:
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+```
+
 Then you can run the server with:
 
 ```bash
@@ -46,9 +52,9 @@ You should be able to access the UI at `http://<ip_address>:8080`.
 
 ## Usage
 
-This is just an alpha-stage development version. The only workflow actually supported is the following:
+This is just an alpha-stage development version. Not much is supported but you can start from the generic Diffusion Pipeline that should load more or less any model:
 
-![Mellon workflow](./mellon_basic_wf.png)
+![Mellon workflow](./mellon_basic_wf.jpg)
 
 Use a Stable Diffusion SD1.5 model for the UNet and VAE, eg: `lykon/absolute-reality-1.81`.
 

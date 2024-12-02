@@ -27,6 +27,7 @@ class WebServer:
 
         self.app.add_routes([web.get('/', self.index),
                              web.get('/nodes', self.nodes),
+                             web.get('/custom_field/{module}/{action}/{field}', self.custom_field),
                              web.post('/graph', self.graph),
                              web.delete('/clearNodeCache', self.clear_node_cache),
                              web.static('/assets', 'web/assets'),
@@ -48,7 +49,7 @@ class WebServer:
     def run(self):
         # TODO: need to do proper queue processing
         async def start_app():
-            runner = web.AppRunner(self.app)
+            runner = web.AppRunner(self.app, client_max_size=1024**4)
             await runner.setup()
             site = web.TCPSite(runner, self.host, self.port)
             
@@ -97,6 +98,16 @@ class WebServer:
     """
     HTTP API
     """
+
+    async def custom_field(self, request):
+        module = request.match_info.get('module')
+        action = request.match_info.get('action')
+        field = request.match_info.get('field')
+        response = web.FileResponse(f'modules/{module}/web/{action}.{field}.html')
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
 
     async def nodes(self, request):
         nodes = {}
@@ -176,7 +187,8 @@ class WebServer:
                     
                     if "display" in params[p] and params[p]["display"] == "ui":
                         # store ui fields that need to be sent back to the client
-                        ui_fields[p] = { "source": source_key, "type": params[p]["type"] }
+                        if params[p]["type"] == "image":
+                            ui_fields[p] = { "source": source_key, "type": params[p]["type"] }
                     else:
                         args[p] = self.node_store[source_id].output[source_key] if source_id else params[p]["value"] if 'value' in params[p] else None
 

@@ -1,26 +1,24 @@
 import logging
-import configparser
+import os
+from config import config
+import torch # warm up since we are going to use it anyway
 
-config = configparser.ConfigParser()
-config.read('config.ini')
-
-log_level = config.get('logging', 'level', fallback='INFO')
-log_level = getattr(logging, log_level.upper())
-
-server_cfg = {
-    'host': config.get('server', 'host', fallback='127.0.0.1'),
-    'port': config.getint('server', 'port', fallback=8080),
-    'cors': config.getboolean('server', 'cors', fallback=False),
-    'cors_route': config.get('server', 'cors_route', fallback='*'),
-}
+if config.hf['cache_dir']:
+    os.environ['HF_HOME'] = config.hf['cache_dir']
 
 # initialize logging
-logging.basicConfig(level=log_level, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+logging.basicConfig(level=config.log['level'], format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y%m%d %H.%M.%S")
 logger = logging.getLogger('mellon')
 
 # load modules
 from modules import MODULE_MAP
 
 from server.web import WebServer
-web_server = WebServer(MODULE_MAP, **server_cfg)
+web_server = WebServer(MODULE_MAP, **config.server)
+
+logger.info(f"""\x1b[33;20m
+╔══════════════════════╗
+║  Welcome to Mellon!  ║
+╚══════════════════════╝\x1b[0m
+Speak Friend and Enter: http://{config.server['host']}:{config.server['port']}""")
 web_server.run()

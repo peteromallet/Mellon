@@ -2,6 +2,10 @@ import torch
 from diffusers import SD3Transformer2DModel, StableDiffusion3Pipeline, AutoencoderKL
 from utils.node_utils import NodeBase
 from utils.memory_manager import memory_flush
+from importlib import import_module
+from config import config
+
+HF_TOKEN = config.hf['token']
 
 class LoadSD3Transformer(NodeBase):
     def execute(self, model_id, dtype, device):
@@ -10,6 +14,7 @@ class LoadSD3Transformer(NodeBase):
             torch_dtype=dtype,
             use_safetensors=True,
             subfolder="transformer",
+            token=HF_TOKEN,
         )
 
         model = self.mm_add(model, priority='high')
@@ -21,18 +26,18 @@ class SD3TextEncodersLoader(NodeBase):
     def execute(self, model_id, dtype, load_t5, device):
         from transformers import CLIPTextModelWithProjection, CLIPTokenizer, T5EncoderModel, T5TokenizerFast
 
-        text_encoder = CLIPTextModelWithProjection.from_pretrained(model_id, subfolder="text_encoder", torch_dtype=dtype)
-        tokenizer = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer", torch_dtype=dtype)
-        text_encoder_2 = CLIPTextModelWithProjection.from_pretrained(model_id, subfolder="text_encoder_2", torch_dtype=dtype)
-        tokenizer_2 = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer_2", torch_dtype=dtype)
+        text_encoder = CLIPTextModelWithProjection.from_pretrained(model_id, subfolder="text_encoder", torch_dtype=dtype, token=HF_TOKEN)
+        tokenizer = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer", torch_dtype=dtype, token=HF_TOKEN)
+        text_encoder_2 = CLIPTextModelWithProjection.from_pretrained(model_id, subfolder="text_encoder_2", torch_dtype=dtype, token=HF_TOKEN)
+        tokenizer_2 = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer_2", torch_dtype=dtype, token=HF_TOKEN)
         text_encoder = self.mm_add(text_encoder, priority='low')
         text_encoder_2 = self.mm_add(text_encoder_2, priority='low')
 
         t5_encoder = None
         t5_tokenizer = None
         if load_t5:
-            t5_encoder = T5EncoderModel.from_pretrained(model_id, subfolder="text_encoder_3", torch_dtype=dtype)
-            t5_tokenizer = T5TokenizerFast.from_pretrained(model_id, subfolder="tokenizer_3", torch_dtype=dtype)
+            t5_encoder = T5EncoderModel.from_pretrained(model_id, subfolder="text_encoder_3", torch_dtype=dtype, token=HF_TOKEN)
+            t5_tokenizer = T5TokenizerFast.from_pretrained(model_id, subfolder="tokenizer_3", torch_dtype=dtype, token=HF_TOKEN)
             t5_encoder = self.mm_add(t5_encoder, priority='low')
 
         return { 'text_encoders': {
@@ -147,6 +152,7 @@ class SD3Sampler(NodeBase):
                 negative,
                 latents_in,
                 seed,
+                scheduler,
                 width,
                 height,
                 steps,
@@ -178,8 +184,13 @@ class SD3Sampler(NodeBase):
             tokenizer=None,
             tokenizer_2=None,
             tokenizer_3=None,
-            vae=dummy_vae
+            vae=dummy_vae,
+            token=HF_TOKEN,
         ).to(device)
+
+        if scheduler != pipe.scheduler.config['_class_name']:
+            scheduler_cls = getattr(import_module("diffusers"), scheduler)
+            pipe.scheduler = scheduler_cls.from_config(pipe.scheduler.config)
 
         #pipe.enable_xformers_memory_efficient_attention()
         #pipe.enable_model_cpu_offload()
@@ -190,7 +201,7 @@ class SD3Sampler(NodeBase):
         with torch.inference_mode():
         #with torch.no_grad():
             latents = pipe(
-                generator=torch.Generator().manual_seed(seed),
+                generator=torch.Generator(device=device).manual_seed(seed),
                 prompt_embeds=positive['embeds'].to(device, dtype=transformer_model.dtype),
                 pooled_prompt_embeds=positive['pooled_embeds'].to(device, dtype=transformer_model.dtype),
                 negative_prompt_embeds=negative['embeds'].to(device, dtype=transformer_model.dtype),

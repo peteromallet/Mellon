@@ -54,6 +54,15 @@ def list_devices():
 
 device_list, default_device = list_devices()
 
+def str_to_dtype(dtype, params):
+    return {
+        'auto': None,
+        'float32': torch.float32,
+        'float16': torch.float16,
+        'bfloat16': torch.bfloat16,
+        'float8_e4m3fn': torch.float8_e4m3fn,
+    }[dtype]
+
 def toTensor(image):
     return tt.PILToTensor()(image) / 255.0
 

@@ -4,7 +4,13 @@ from utils.node_utils import NodeBase
 from utils.memory_manager import memory_flush, memory_manager
 
 class LoadVAE(NodeBase):
+    is_compiled = False
+    
     def execute(self, model_id, device, compile):
+        if not compile and self.is_compiled:
+            self.mm_unload(vae)
+
+
         vae = AutoencoderKL.from_pretrained(model_id, subfolder="vae")
         vae = self.mm_add(vae, priority='medium')
         
@@ -22,5 +28,6 @@ class LoadVAE(NodeBase):
             self.mm_update(vae, model=compiled)
             del compiled
             memory_flush(deep=True)
+            self.is_compiled = True
 
         return { 'vae': { 'model': vae, 'device': device } }

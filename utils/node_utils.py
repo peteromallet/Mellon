@@ -143,7 +143,7 @@ class NodeBase():
         # we perform a second pass for cross parameter validation when calling the postProcess function
         for key in values:
             # ensure the value is a valid option (mostly for dropdowns)
-            if 'options' in schema[key]:
+            if 'options' in schema[key] and not ('no_validation' in schema[key] and schema[key]['no_validation']):
                 options = schema[key]['options']
 
                 # options can be in the format: [ 1, 2, 3 ] or { '1': { }, '2': { }, '3': { } }

@@ -4,19 +4,12 @@ from utils.torch_utils import toTensor, toPIL
 from utils.node_utils import NodeBase
 
 class Preview(NodeBase):
-    """
-    def __call__(self, **kwargs):
-        values = self._validate_params(kwargs)
-        images = values.get('images', None)
-
-        self.images = images[0] if isinstance(images, list) else images
-    """
     def execute(self, images, vae):
-        if isinstance(images, Image.Image):
+        if isinstance(images[0], Image.Image):
             # TODO: support multiple images
             return { 'images_out': images[0] if isinstance(images, list) else images,
-                     'width': images.width,
-                     'height': images.height }
+                     'width': images[0].width,
+                     'height': images[0].height }
         
         if not vae:
             raise ValueError("VAE is required to decode latents")
