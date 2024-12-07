@@ -16,13 +16,12 @@ class DiffusionPipelineLoader(NodeBase):
                 variant,
                 revision,
                 device,
-                alt_auth_token,
                 use_safetensors,
                 ):
         
         is_local = model_id in list_local_models()
         local_files_only = online_status == 'Local files only' or (online_status == 'Connect if needed' and is_local)
-        token = alt_auth_token if alt_auth_token else HF_TOKEN
+        token = HF_TOKEN
 
         print(f"Loading pipeline from {model_id} with token {token} and local files only {local_files_only}")
 

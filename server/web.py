@@ -6,7 +6,6 @@ import io
 import base64
 import re
 from importlib import import_module
-import torch
 import logging
 logger = logging.getLogger('mellon')
 import asyncio
@@ -27,7 +26,8 @@ class WebServer:
 
         self.app.add_routes([web.get('/', self.index),
                              web.get('/nodes', self.nodes),
-                             web.get('/custom_field/{module}/{action}/{field}', self.custom_field),
+                             web.get('/custom_component/{module}/{component}', self.custom_component),
+                             web.get('/custom_assets/{module}/{file_path}', self.custom_assets),
                              web.post('/graph', self.graph),
                              web.delete('/clearNodeCache', self.clear_node_cache),
                              web.static('/assets', 'web/assets'),
@@ -99,15 +99,33 @@ class WebServer:
     HTTP API
     """
 
-    async def custom_field(self, request):
+    async def custom_component(self, request):
         module = request.match_info.get('module')
-        action = request.match_info.get('action')
-        field = request.match_info.get('field')
-        response = web.FileResponse(f'modules/{module}/web/{action}.{field}.html')
+        component = request.match_info.get('component')
+
+        path = component.split('/')
+        if len(path) > 1:
+            module = path[0]
+            component = path[1]
+
+        if module not in self.module_map:
+            raise web.HTTPNotFound(text=f"Module {module} not found")
+        
+        response = web.FileResponse(f'modules/{module}/web/{component}.js')
+        response.headers["Content-Type"] = "application/javascript"
         response.headers["Cache-Control"] = "no-cache"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
         return response
+
+    async def custom_assets(self, request):
+        module = request.match_info.get('module')
+        file_path = request.match_info.get('file_path')
+
+        if module not in self.module_map:
+            raise web.HTTPNotFound(text=f"Module {module} not found")
+
+        return web.FileResponse(f'modules/{module}/web/assets/{file_path}')
 
     async def nodes(self, request):
         nodes = {}
@@ -223,6 +241,7 @@ class WebServer:
                 logger.debug(f"Node {node} ({module_name}.{action_name}) executed in {execution_time:.3f}s")
 
                 # TODO: this is just a placeholder for now
+
                 for key in ui_fields:
                     value = self.node_store[node].output[ui_fields[key]["source"]]
                     await self.ws_clients[sid].send_json({

@@ -66,12 +66,6 @@ MODULE_MAP = {
                 'default': 'auto',
                 'group': 'more_options',
             },
-            'alt_auth_token': {
-                'label': 'Auth token',
-                'type': 'string',
-                'default': '',
-                'group': 'more_options',
-            },
             'use_safetensors': {
                 'label': 'Use safetensors',
                 'type': 'boolean',

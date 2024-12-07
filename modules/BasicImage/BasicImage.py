@@ -10,7 +10,7 @@ class Preview(NodeBase):
             return { 'images_out': images[0] if isinstance(images, list) else images,
                      'width': images[0].width,
                      'height': images[0].height }
-        
+
         if not vae:
             raise ValueError("VAE is required to decode latents")
 
