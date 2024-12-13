@@ -1,10 +1,5 @@
 from utils.torch_utils import device_list, default_device, str_to_dtype
 from utils.hf_utils import list_local_models
-import torch
-
-node_devices = device_list.copy()
-node_devices['auto'] = { "index": 0, "device": "cpu", "host": '', "label": "auto", "total_memory": None }
-del node_devices['cpu']
 
 MODULE_MAP = {
     'DiffusionPipelineLoader': {
@@ -39,11 +34,11 @@ MODULE_MAP = {
                 'default': 'bfloat16',
                 'postProcess': str_to_dtype,
             },
-            'load_strategy': {
-                'label': 'CPU Offload',
+            'offload_strategy': {
+                'label': 'Offload Strategy',
                 'type': 'string',
-                'options': [ 'None', 'Model cpu offload', 'Sequential cpu offload' ],
-                'default': 'None',
+                'options': [ 'None', 'Offload as needed (Mellon)', 'Model offload (Diffusers)', 'Sequential offload (Diffusers)' ],
+                'default': 'Offload as needed (Mellon)',
             },
             'variant': {
                 'label': 'Variant',
@@ -62,8 +57,8 @@ MODULE_MAP = {
             'device': {
                 'label': 'Device',
                 'type': 'string',
-                'options': node_devices,
-                'default': 'auto',
+                'options': device_list,
+                'default': default_device,
                 'group': 'more_options',
             },
             'use_safetensors': {

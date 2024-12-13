@@ -21,4 +21,5 @@ logger.info(f"""\x1b[33;20m
 ║  Welcome to Mellon!  ║
 ╚══════════════════════╝\x1b[0m
 Speak Friend and Enter: http://{config.server['host']}:{config.server['port']}""")
+
 web_server.run()

@@ -12,7 +12,7 @@ class LoadVAE(NodeBase):
 
 
         vae = AutoencoderKL.from_pretrained(model_id, subfolder="vae")
-        vae = self.mm_add(vae, priority='medium')
+        vae = self.mm_add(vae, priority=2)
         
         if compile:
             # we free up all the GPU memory to perform the intensive compilation

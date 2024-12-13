@@ -24,7 +24,6 @@ MODULE_MAP = {
                 'label': 'Model ID',
                 'type': 'string',
                 'default': 'stabilityai/stable-diffusion-3.5-large',
-                'description': 'The ID of the model to use',
             },
             'dtype': {
                 'label': 'dtype',
@@ -47,7 +46,7 @@ MODULE_MAP = {
         'category': 'text-encoders',
         'params': {
             'text_encoders': {
-                'label': 'CLIP+T5 Encoders',
+                'label': 'SD3 Encoders',
                 'display': 'output',
                 'type': 'SD3TextEncoders',
             },
@@ -75,20 +74,13 @@ MODULE_MAP = {
         },
     },
 
-    'SD3TextEncoder': {
-        'label': 'SD3 Text Encoder',
-        'description': 'Encode text for SD3',
+    'SD3PromptEncoder': {
+        'label': 'SD3 Prompt Encoder',
         'params': {
             'text_encoders': {
-                'label': 'CLIP or CLIP+T5 Encoders',
+                'label': 'SD3 Encoders',
                 'display': 'input',
-                'type': ['CLIPTextEncoders', 'SD3TextEncoders'],
-                #'onConnect': { 'action': 'disable', 'params': ['t5_encoders', 'text_encoders.type', 'SD3TextEncoders'] },
-            },
-            't5_encoders': {
-                'label': 'T5 Encoders',
-                'display': 'input',
-                'type': 'T5Encoders',
+                'type': 'SD3TextEncoders',
             },
             'embeds': {
                 'label': 'Embeddings',

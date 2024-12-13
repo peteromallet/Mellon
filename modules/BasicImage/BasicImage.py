@@ -5,11 +5,14 @@ from utils.node_utils import NodeBase
 
 class Preview(NodeBase):
     def execute(self, images, vae):
-        if isinstance(images[0], Image.Image):
+        if isinstance(images, list) and isinstance(images[0], Image.Image):
+            images = images[0]
+
+        if isinstance(images, Image.Image):
             # TODO: support multiple images
-            return { 'images_out': images[0] if isinstance(images, list) else images,
-                     'width': images[0].width,
-                     'height': images[0].height }
+            return { 'images_out': images,
+                     'width': images.width,
+                     'height': images.height }
 
         if not vae:
             raise ValueError("VAE is required to decode latents")

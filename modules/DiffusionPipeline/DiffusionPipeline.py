@@ -12,7 +12,7 @@ class DiffusionPipelineLoader(NodeBase):
                 model_id,
                 online_status,
                 dtype,
-                load_strategy,
+                offload_strategy,
                 variant,
                 revision,
                 device,
@@ -37,10 +37,10 @@ class DiffusionPipelineLoader(NodeBase):
 
         device = device_list[device]['device'] if device in device_list else 'cuda'
 
-        if load_strategy == 'Model cpu offload':
+        if offload_strategy == 'Model offload (diffusers)':
             pipeline.enable_model_cpu_offload(device=device)
             device = None
-        elif load_strategy == 'Sequential cpu offload':
+        elif offload_strategy == 'Sequential offload (diffusers)':
             pipeline.enable_sequential_cpu_offload(device=device)
             device = None
 

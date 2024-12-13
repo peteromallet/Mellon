@@ -21,6 +21,19 @@ class Config:
         self.hf = {
             'token': self.config.get('huggingface', 'token', fallback=None),
             'cache_dir': self.config.get('huggingface', 'cache_dir', fallback=None),
+            'online_status': self.config.get('huggingface', 'online_status', fallback='Connect if needed'),
         }
+
+        self.paths = {
+            'temp': self.config.get('paths', 'temp', fallback='data/temp'),
+        }
+
+        for path, value in self.paths.items():
+            if not value.startswith('/'):
+                value = os.path.join(os.path.dirname(__file__), value)
+                self.paths[path] = value
+
+            if not os.path.exists(value):
+                os.makedirs(value)
 
 config = Config()

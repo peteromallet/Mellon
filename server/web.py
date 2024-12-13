@@ -191,7 +191,7 @@ class WebServer:
             for node in path:
                 module_name = nodes[node]["module"]
                 action_name = nodes[node]["action"]
-                logger.debug(f"Executing node {node} ({module_name}.{action_name})")
+                logger.debug(f"Executing node {module_name}.{action_name}")
 
                 params = nodes[node]["params"]
                 ui_fields = {}
@@ -207,6 +207,8 @@ class WebServer:
                         # store ui fields that need to be sent back to the client
                         if params[p]["type"] == "image":
                             ui_fields[p] = { "source": source_key, "type": params[p]["type"] }
+                        elif params[p]["type"] == "3d":
+                            ui_fields[p] = { "source": source_key, "type": params[p]["type"] }
                     else:
                         args[p] = self.node_store[source_id].output[source_key] if source_id else params[p]["value"] if 'value' in params[p] else None
 
@@ -216,7 +218,10 @@ class WebServer:
                     raise ValueError("Invalid action")
                 
                 # import the module and get the action
-                module = import_module(f"modules.{module_name}.{module_name}")
+                if module_name.endswith(".custom"):
+                    module = import_module(f"custom.{module_name.replace('.custom', '')}.{module_name.replace('.custom', '')}")
+                else:
+                    module = import_module(f"modules.{module_name}.{module_name}")
                 action = getattr(module, action_name)
 
                 # if the node is not in the node store, initialize it
@@ -224,7 +229,7 @@ class WebServer:
                     self.node_store[node] = action(node)
 
                 if not callable(self.node_store[node]):
-                    raise TypeError(f"The class `{module_name}.{action_name}` is not callable. Ensure that the class has a __call__ method or extent it from `NodeBase`.")
+                    raise TypeError(f"The class `{module_name}.{action_name}` is not callable. Ensure that the class has a __call__ method or extend it from `NodeBase`.")
                 
                 # execute the node
                 self.node_store[node](**args)
@@ -245,10 +250,10 @@ class WebServer:
                 for key in ui_fields:
                     value = self.node_store[node].output[ui_fields[key]["source"]]
                     await self.ws_clients[sid].send_json({
-                        "type": 'image', #ui_fields[key]["type"],
+                        "type": ui_fields[key]["type"],
                         "key": key,
                         "nodeId": node,
-                        "data": self.image_to_base64(value)
+                        "data": self.to_base64(ui_fields[key]["type"], value)
                     })
 
 
@@ -332,11 +337,17 @@ class WebServer:
     """
     Helper functions
     """
-    def image_to_base64(self, image):
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='PNG')
-        img_byte_arr = img_byte_arr.getvalue()
-        return base64.b64encode(img_byte_arr).decode('utf-8')
+    def to_base64(self, type, value):
+        if type == "image":
+            img_byte_arr = io.BytesIO()
+            value.save(img_byte_arr, format='PNG')
+            img_byte_arr = img_byte_arr.getvalue()
+            return base64.b64encode(img_byte_arr).decode('utf-8')
+        elif type == "3d":
+            glb_byte_arr = io.BytesIO()
+            glb_byte_arr.write(value)
+            glb_byte_arr = glb_byte_arr.getvalue()
+            return base64.b64encode(glb_byte_arr).decode('utf-8')
     
     def slugify(self, text):
         return re.sub(r'[^\w\s-]', '', text).strip().replace(' ', '-')

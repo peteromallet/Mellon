@@ -61,6 +61,8 @@ class NodeBase():
     def __init__(self, node_id):
         self.node_id = node_id
         self.module_name = self.__class__.__module__.split('.')[-1]
+        if 'custom.' in self.__class__.__module__:
+            self.module_name = self.module_name + '.custom'
         self.class_name = self.__class__.__name__
         self.params = {}
         self.output = get_module_output(self.module_name, self.class_name)
@@ -174,11 +176,18 @@ class NodeBase():
         )
     
     def mm_add(self, model, model_id=None, device=None, priority=2):
+        if memory_manager.is_cached(model_id):
+            self.mm_update(model_id, model=model, priority=priority)
+            return model_id
+
         model_id = f'{self.node_id}.{model_id}' if model_id else f'{self.node_id}.{nanoid.generate(size=8)}'
         device = device if device else str(model.device)
 
         self._mm_model_ids.append(model_id)
         return memory_manager.add_model(model, model_id, device=device, priority=priority)
+
+    def mm_get(self, model_id):
+        return memory_manager.get_model(model_id) if model_id else None
 
     def mm_load(self, model_id, device):
         return memory_manager.load_model(model_id, device) if model_id else None

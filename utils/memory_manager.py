@@ -21,22 +21,13 @@ def memory_flush(gc_collect=False, deep=False):
                 torch.cuda.reset_max_memory_allocated(d['index'])
                 torch.cuda.reset_peak_memory_stats(d['index'])
 
-class Priority(Enum):
-    NONE = 0
-    LOW = 1
-    MEDIUM = 2
-    HIGH = 3
-    CRITICAL = 4
-
 class MemoryManager:
     def __init__(self, memory_threshold=.9):
         self.cache = {}
         self.memory_threshold = memory_threshold
 
-    def add_model(self, model, model_id, device='cpu', priority=Priority.MEDIUM):
-        if isinstance(priority, str):
-            priority = priority.upper()
-            priority = Priority[priority] if priority in Priority else Priority.MEDIUM
+    def add_model(self, model, model_id, device='cpu', priority=2):
+        priority = priority if isinstance(priority, int) else 2
 
         if model_id not in self.cache:
             self.cache[model_id] = {
@@ -64,13 +55,11 @@ class MemoryManager:
         if device == 'cpu':
             return self.unload_model(model_id)
 
-        device_index = device_list[device]['index']
-
         cache_priority = []
         # Sort models by priority and last_used
         for id, model in self.cache.items():
             if model['device'] == device:
-                cache_priority.append((model['priority'].value, model['last_used'], id))
+                cache_priority.append((model['priority'], model['last_used'], id))
 
         cache_priority.sort()
         memory_flush()
@@ -127,10 +116,14 @@ class MemoryManager:
     def update_model(self, model_id, model=None, priority=None):
         if model_id in self.cache:
             if model:
+                self.unload_model(model_id)
                 self.cache[model_id]['model'] = model
                 memory_flush()
             if priority:
                 self.cache[model_id]['priority'] = priority
+
+    def is_cached(self, model_id):
+        return model_id in self.cache
 
 
 memory_manager = MemoryManager()

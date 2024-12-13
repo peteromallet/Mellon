@@ -17,7 +17,7 @@ class LoadSD3Transformer(NodeBase):
             token=HF_TOKEN,
         )
 
-        model = self.mm_add(model, priority='high')
+        model = self.mm_add(model, priority=3)
  
         return { 'transformer': { 'model': model, 'device': device } }
 
@@ -30,15 +30,15 @@ class SD3TextEncodersLoader(NodeBase):
         tokenizer = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer", torch_dtype=dtype, token=HF_TOKEN)
         text_encoder_2 = CLIPTextModelWithProjection.from_pretrained(model_id, subfolder="text_encoder_2", torch_dtype=dtype, token=HF_TOKEN)
         tokenizer_2 = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer_2", torch_dtype=dtype, token=HF_TOKEN)
-        text_encoder = self.mm_add(text_encoder, priority='low')
-        text_encoder_2 = self.mm_add(text_encoder_2, priority='low')
+        text_encoder = self.mm_add(text_encoder, priority=1)
+        text_encoder_2 = self.mm_add(text_encoder_2, priority=1)
 
         t5_encoder = None
         t5_tokenizer = None
         if load_t5:
             t5_encoder = T5EncoderModel.from_pretrained(model_id, subfolder="text_encoder_3", torch_dtype=dtype, token=HF_TOKEN)
             t5_tokenizer = T5TokenizerFast.from_pretrained(model_id, subfolder="tokenizer_3", torch_dtype=dtype, token=HF_TOKEN)
-            t5_encoder = self.mm_add(t5_encoder, priority='low')
+            t5_encoder = self.mm_add(t5_encoder, priority=1)
 
         return { 'text_encoders': {
             'text_encoder': text_encoder,
@@ -48,102 +48,86 @@ class SD3TextEncodersLoader(NodeBase):
             't5_encoder': t5_encoder,
             't5_tokenizer': t5_tokenizer,
             'device': device
-        } }
+        }}
 
-class SD3TextEncoder(NodeBase):
-    def execute(self, text_encoders, t5_encoders, prompt, prompt_2, prompt_3, prompt_scale, prompt_scale_2, prompt_scale_3):
-        if 't5_encoder' in text_encoders:
-            t5_encoders = { 't5_encoder': text_encoders['t5_encoder'], 't5_tokenizer': text_encoders['t5_tokenizer'], 'device': text_encoders['device'] }
-
-        clip_encoders = [text_encoders['text_encoder'], text_encoders['text_encoder_2']]
-        clip_tokenizers = [text_encoders['tokenizer'], text_encoders['tokenizer_2']]
-
-        t5_encoder = t5_encoders['t5_encoder'] if t5_encoders else None
-        t5_tokenizer = t5_encoders['t5_tokenizer'] if t5_encoders else None
-
-        device_clip = text_encoders['device']
-        device_t5 = t5_encoders['device'] if t5_encoders else None
+class SD3PromptEncoder(NodeBase):
+    def execute(self, text_encoders, prompt, prompt_2, prompt_3, prompt_scale, prompt_scale_2, prompt_scale_3):        
+        model_id = getattr(self.mm_get(text_encoders['text_encoder']).config, '_name_or_path')
+        device = text_encoders['device']
+        pipe = StableDiffusion3Pipeline.from_pretrained(
+            model_id,
+            local_files_only=True,
+            transformer=None,
+            vae=None,
+            scheduler=None,
+            text_encoder=self.mm_get(text_encoders['text_encoder']),
+            text_encoder_2=self.mm_get(text_encoders['text_encoder_2']),
+            text_encoder_3=self.mm_get(text_encoders['t5_encoder']) if text_encoders['t5_encoder'] else None,
+            tokenizer=text_encoders['tokenizer'],
+            tokenizer_2=text_encoders['tokenizer_2'],
+            tokenizer_3=text_encoders['t5_tokenizer'],
+        )
 
         prompt = prompt or ""
         prompt_2 = prompt_2 or prompt
         prompt_3 = prompt_3 or prompt
 
-        # Encode the CLIP prompts
-        clip_embeds = []
-        clip_pooled_embeds = []
-        clip_prompts = [prompt, prompt_2]
-        prompt_scales = [prompt_scale, prompt_scale_2]
+        prompt = [prompt] if isinstance(prompt, str) else prompt
+        prompt_2 = [prompt_2] if isinstance(prompt_2, str) else prompt_2
+        prompt_3 = [prompt_3] if isinstance(prompt_3, str) else prompt_3
+
         with torch.inference_mode():
-        #with torch.no_grad():
-            for i, prompt in enumerate(clip_prompts):
-                encoder = self.mm_load(clip_encoders[i], device_clip)
-                prompt = [prompt] if isinstance(prompt, str) else prompt
-                scale = prompt_scales[i]
-                batch_size = len(prompt)
+            self.mm_load(text_encoders['text_encoder'], device)
+            prompt_embed, pooled_prompt_embed = pipe._get_clip_prompt_embeds(
+                prompt=prompt,
+                device=device,
+                num_images_per_prompt=1,
+                clip_skip=None,
+                clip_model_index=0,
+            )
+            if prompt_scale != 1.0:
+                prompt_embed = prompt_embed * prompt_scale
+                pooled_prompt_embed = pooled_prompt_embed * prompt_scale
 
-                text_input_ids = clip_tokenizers[i](
-                    prompt,
-                    padding="max_length",
-                    max_length=77,
-                    truncation=True,
-                    return_tensors="pt",
-                ).input_ids
+            self.mm_load(text_encoders['text_encoder_2'], device)
+            prompt_2_embed, pooled_prompt_2_embed = pipe._get_clip_prompt_embeds(
+                prompt=prompt_2,
+                device=device,
+                num_images_per_prompt=1,
+                clip_skip=None,
+                clip_model_index=1,
+            )
+            if prompt_scale_2 != 1.0:
+                prompt_2_embed = prompt_2_embed * prompt_scale_2
+                pooled_prompt_2_embed = pooled_prompt_2_embed * prompt_scale_2
 
-                embeds = encoder(text_input_ids.to(device_clip), output_hidden_states=True)
-                pooled_embeds = embeds[0]
-                embeds = embeds.hidden_states[-2]
+            t5_prompt_embed = None
+            if text_encoders['t5_encoder']:
+                self.mm_load(text_encoders['t5_encoder'], device)
+                t5_prompt_embed = pipe._get_t5_prompt_embeds(
+                    prompt=prompt_3,
+                    device=device,
+                    num_images_per_prompt=1,
+                    max_sequence_length=256,
+                )
+                if prompt_scale_3 != 1.0:
+                    t5_prompt_embed = t5_prompt_embed * prompt_scale_3
+            else:
+                t5_prompt_embed = torch.zeros((prompt_embed.shape[0], 256, 4096), device=device, dtype=prompt_embed.dtype)
 
-                _, seq_len, _ = embeds.shape
-                embeds = embeds.view(batch_size, seq_len, -1).to('cpu')
-                pooled_embeds = pooled_embeds.view(batch_size, -1).to('cpu')
+        clip_prompt_embeds = torch.cat([prompt_embed, prompt_2_embed], dim=-1)
 
-                if scale != 1.0:
-                    embeds *= scale
-                    pooled_embeds *= scale
-                            
-                clip_embeds.append(embeds)
-                clip_pooled_embeds.append(pooled_embeds)
-
-        del encoder, text_input_ids, embeds, pooled_embeds, clip_tokenizers
-    
-        clip_embeds = torch.cat(clip_embeds, dim=-1)
-        pooled_embeds = torch.cat(clip_pooled_embeds, dim=-1)
-
-        # Encode the T5 prompt
-        if t5_encoder is None:
-            t5_embeds = torch.zeros((batch_size, 256, 4096), device='cpu', dtype=clip_embeds.dtype)
-        else:
-            prompt_3 = [prompt_3] if isinstance(prompt_3, str) else prompt_3
-            batch_size = len(prompt_3)
-
-            encoder = self.mm_load(t5_encoder, device_t5)
-            text_input_ids = t5_tokenizer(
-                prompt_3,
-                padding="max_length",
-                max_length=256,
-                truncation=True,
-                add_special_tokens=True,
-                return_tensors="pt",
-            ).input_ids
-
-            #with torch.no_grad():
-            with torch.inference_mode():
-                t5_embeds = encoder(text_input_ids.to(device_t5))[0]
-
-            _, seq_len, _ = t5_embeds.shape
-            t5_embeds = t5_embeds.view(batch_size, seq_len, -1).to('cpu', dtype=clip_embeds.dtype)
-
-            if prompt_scale_3 != 1.0:
-                t5_embeds *= prompt_scale_3
-
-            del encoder, text_input_ids, t5_tokenizer
-
-        clip_embeds = torch.nn.functional.pad(
-            clip_embeds, (0, t5_embeds.shape[-1] - clip_embeds.shape[-1])
+        clip_prompt_embeds = torch.nn.functional.pad(
+            clip_prompt_embeds, (0, t5_prompt_embed.shape[-1] - clip_prompt_embeds.shape[-1])
         )
-        embeds = torch.cat([clip_embeds, t5_embeds], dim=-2)
+        prompt_embeds = torch.cat([clip_prompt_embeds, t5_prompt_embed], dim=-2).to('cpu')
 
-        return { 'embeds': { 'embeds': embeds, 'pooled_embeds': pooled_embeds } }
+        pooled_prompt_embeds = torch.cat([pooled_prompt_embed, pooled_prompt_2_embed], dim=-1).to('cpu')
+
+        del pipe, prompt_embed, pooled_prompt_embed, prompt_2_embed, pooled_prompt_2_embed, t5_prompt_embed
+        memory_flush()
+
+        return { 'embeds': { 'prompt_embeds': prompt_embeds, 'pooled_prompt_embeds': pooled_prompt_embeds } }
 
 class SD3Sampler(NodeBase):
     def execute(self,
@@ -158,12 +142,9 @@ class SD3Sampler(NodeBase):
                 steps,
                 cfg):
 
-        transformer_model = self.mm_load(transformer['model'], transformer['device'])
+        device = transformer['device']        
+        transformer_model = self.mm_load(transformer['model'], device)
         model_id = transformer_model.config['_name_or_path']
-        device = transformer['device']
-
-        #torch.backends.cudnn.allow_tf32 = False
-        #torch.backends.cuda.matmul.allow_tf32 = False
 
         dummy_vae = AutoencoderKL(
             in_channels=3,
@@ -175,6 +156,25 @@ class SD3Sampler(NodeBase):
             latent_channels=16,
         )
 
+        scheduler_config = {
+            'FlowMatchEulerDiscreteScheduler': {
+                'num_train_timesteps': 1000,
+                'shift': 3.0,
+                'use_dynamic_shifting': False,
+                'base_shift': 0.5,
+                'max_shift': 1.15,
+                'base_image_seq_len': 256,
+                'max_image_seq_len': 4096,
+                'invert_sigmas': False,
+            },
+            'FlowMatchHeunDiscreteScheduler': {
+                'num_train_timesteps': 1000,
+                'shift': 3.0,
+            }
+        }
+        scheduler_cls = getattr(import_module("diffusers"), scheduler)
+        scheduler_cls = scheduler_cls.from_config(scheduler_config[scheduler])
+
         pipe = StableDiffusion3Pipeline.from_pretrained(
             model_id,
             transformer=transformer_model,
@@ -184,37 +184,32 @@ class SD3Sampler(NodeBase):
             tokenizer=None,
             tokenizer_2=None,
             tokenizer_3=None,
+            scheduler=scheduler_cls,
             vae=dummy_vae,
-            token=HF_TOKEN,
+            local_files_only=True,
         ).to(device)
 
-        if scheduler != pipe.scheduler.config['_class_name']:
-            scheduler_cls = getattr(import_module("diffusers"), scheduler)
-            pipe.scheduler = scheduler_cls.from_config(pipe.scheduler.config)
-
-        #pipe.enable_xformers_memory_efficient_attention()
-        #pipe.enable_model_cpu_offload()
-
-        #if not negative:
-        #    negative = { 'embeds': torch.zeros_like(positive['embeds']), 'pooled_embeds': torch.zeros_like(positive['pooled_embeds']) }
+        if not negative:
+            negative = { 'prompt_embeds': torch.zeros_like(positive['prompt_embeds']), 'pooled_prompt_embeds': torch.zeros_like(positive['pooled_prompt_embeds']) }
 
         with torch.inference_mode():
         #with torch.no_grad():
             latents = pipe(
-                generator=torch.Generator(device=device).manual_seed(seed),
-                prompt_embeds=positive['embeds'].to(device, dtype=transformer_model.dtype),
-                pooled_prompt_embeds=positive['pooled_embeds'].to(device, dtype=transformer_model.dtype),
-                negative_prompt_embeds=negative['embeds'].to(device, dtype=transformer_model.dtype),
-                negative_pooled_prompt_embeds=negative['pooled_embeds'].to(device, dtype=transformer_model.dtype),
+                generator=torch.Generator('cpu').manual_seed(seed),
+                prompt_embeds=positive['prompt_embeds'].to(device, dtype=transformer_model.dtype),
+                pooled_prompt_embeds=positive['pooled_prompt_embeds'].to(device, dtype=transformer_model.dtype),
+                negative_prompt_embeds=negative['prompt_embeds'].to(device, dtype=transformer_model.dtype),
+                negative_pooled_prompt_embeds=negative['pooled_prompt_embeds'].to(device, dtype=transformer_model.dtype),
                 width=width,
                 height=height,
                 guidance_scale=cfg,
                 num_inference_steps=steps,
                 output_type="latent",
             ).images
-        
-        del pipe, positive, negative, transformer_model
+
         latents = latents.to('cpu')
+
+        del pipe, positive, negative, transformer_model, scheduler_cls
         memory_flush()
 
         return { 'latents': latents }
