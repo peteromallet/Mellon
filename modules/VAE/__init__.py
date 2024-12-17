@@ -1,12 +1,12 @@
 from utils.torch_utils import device_list, default_device
-
+from utils.hf_utils import list_local_models
 MODULE_MAP = {
     'LoadVAE': {
         'label': 'VAE Loader',
         'description': 'Load the VAE of a Stable Diffusion model',
         'category': 'vae',
         'params': {
-            'vae': {
+            'model': {
                 'label': 'VAE',
                 'display': 'output',
                 'type': 'vae',
@@ -14,18 +14,16 @@ MODULE_MAP = {
             'model_id': {
                 'label': 'Model ID',
                 'type': 'string',
-                'description': 'The ID of the model to use',
+                'options': list_local_models(),
+                'display': 'autocomplete',
+                'no_validation': True,
+                'default': 'stabilityai/stable-diffusion-3.5-large',
             },
             'device': {
                 'label': 'Device',
                 'type': 'string',
                 'options': device_list,
                 'default': default_device,
-            },
-            'compile': {
-                'label': 'Torch Compile',
-                'type': 'boolean',
-                'default': False,
             },
         },
     },

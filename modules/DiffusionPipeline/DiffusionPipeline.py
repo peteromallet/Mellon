@@ -23,8 +23,6 @@ class DiffusionPipelineLoader(NodeBase):
         local_files_only = online_status == 'Local files only' or (online_status == 'Connect if needed' and is_local)
         token = HF_TOKEN
 
-        print(f"Loading pipeline from {model_id} with token {token} and local files only {local_files_only}")
-
         pipeline = DiffusionPipeline.from_pretrained(
             model_id,
             token=token,

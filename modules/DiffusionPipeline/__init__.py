@@ -4,9 +4,6 @@ from utils.hf_utils import list_local_models
 MODULE_MAP = {
     'DiffusionPipelineLoader': {
         'label': 'Diffusion Pipeline Loader',
-        'style': {
-            'minWidth': '320px',
-        },
         'params': {
             'diffusion_pipeline': {
                 'label': 'Pipeline',
@@ -43,8 +40,6 @@ MODULE_MAP = {
             'variant': {
                 'label': 'Variant',
                 'type': 'string',
-                #'options': [ 'fp16', 'ema' ],
-                #'display': 'autocomplete',
                 'default': '',
                 'group': { 'key': 'more_options', 'label': 'More Options', 'display': 'collapse' },
             },

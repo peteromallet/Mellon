@@ -14,6 +14,10 @@ class Config:
             'cors_route': self.config.get('server', 'cors_route', fallback='*'),
         }
 
+        self.app = {
+            'global_seed': self.config.getint('app', 'global_seed', fallback=42),
+        }
+
         self.log = {
             'level': getattr(logging, self.config.get('logging', 'level', fallback='INFO').upper()),
         }

@@ -58,7 +58,7 @@ def are_different(a, b):
 class NodeBase():
     CALLBACK = 'execute'
 
-    def __init__(self, node_id):
+    def __init__(self, node_id=None):
         self.node_id = node_id
         self.module_name = self.__class__.__module__.split('.')[-1]
         if 'custom.' in self.__class__.__module__:
@@ -71,6 +71,11 @@ class NodeBase():
         self._execution_time = 0
 
     def __call__(self, **kwargs):
+        # if the node_id is not set, the class was called directly and not from a node
+        # so we call the execute method directly
+        if not self.node_id:
+            return getattr(self, self.CALLBACK)(**kwargs)
+
         values = self._validate_params(kwargs)
 
         execution_time = time.time()
@@ -176,6 +181,11 @@ class NodeBase():
         )
     
     def mm_add(self, model, model_id=None, device=None, priority=2):
+        # if the node_id is not set, the class was called directly and we skip the memory manager
+        # it's up to the caller to manage the model
+        if not self.node_id:
+            return model
+
         if memory_manager.is_cached(model_id):
             self.mm_update(model_id, model=model, priority=priority)
             return model_id

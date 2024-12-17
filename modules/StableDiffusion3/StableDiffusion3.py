@@ -1,59 +1,139 @@
 import torch
-from diffusers import SD3Transformer2DModel, StableDiffusion3Pipeline, AutoencoderKL
+from diffusers import SD3Transformer2DModel, AutoencoderKL, StableDiffusion3Pipeline
 from utils.node_utils import NodeBase
 from utils.memory_manager import memory_flush
-from importlib import import_module
+from utils.hf_utils import is_local_files_only, get_repo_path
 from config import config
 
 HF_TOKEN = config.hf['token']
 
-class LoadSD3Transformer(NodeBase):
-    def execute(self, model_id, dtype, device):
-        model = SD3Transformer2DModel.from_pretrained(
-            model_id,
-            torch_dtype=dtype,
-            use_safetensors=True,
-            subfolder="transformer",
-            token=HF_TOKEN,
-        )
+def calculate_mu(width: int, height: int, 
+                patch_size: int = 2,
+                base_image_seq_len: int = 256,
+                max_image_seq_len: int = 4096,
+                base_shift: float = 0.5,
+                max_shift: float = 1.15) -> float:
 
+    # latent size
+    width = width // 8
+    height = height // 8
+
+    seq_len = (width // patch_size) * (height // patch_size)
+    seq_len = max(min(seq_len, max_image_seq_len), base_image_seq_len)
+
+    m = (max_shift - base_shift) / (max_image_seq_len - base_image_seq_len)
+    b = base_shift - m * base_image_seq_len
+    mu = seq_len * m + b
+    
+    # Calculate logarithmic interpolation factor. TODO: check if this is correct
+    #factor = (math.log2(seq_len) - math.log2(base_image_seq_len)) / (math.log2(max_image_seq_len) - math.log2(base_image_seq_len))
+    #factor = max(min(factor, 1.0), 0.0)
+    #mu = base_shift + factor * (max_shift - base_shift)
+
+    return mu
+
+class SD3UnifiedLoader(NodeBase):
+    def execute(
+            self,
+            model_id,
+            dtype,
+            device,
+            load_t5,
+        ):
+        from modules.VAE.VAE import LoadVAE
+
+        model_id = model_id or 'stabilityai/stable-diffusion-3.5-large'
+
+        transformer = SD3TransformerLoader()(model_id=model_id, dtype=dtype, device=device)['model']
+        transformer['transformer'] = self.mm_add(transformer['transformer'], priority=3)
+
+        text_encoders = SD3TextEncodersLoader()(model_id=model_id, dtype=dtype, load_t5=load_t5, device=device)['model']
+        text_encoders['text_encoder'] = self.mm_add(text_encoders['text_encoder'], priority=1)
+        text_encoders['text_encoder_2'] = self.mm_add(text_encoders['text_encoder_2'], priority=1)
+        text_encoders['t5_encoder'] = self.mm_add(text_encoders['t5_encoder'], priority=0) if load_t5 else None
+
+        vae = LoadVAE()(model_id=model_id, device=device)['model']
+        vae['vae'] = self.mm_add(vae['vae'], priority=2)
+
+        return { 'model': {
+            'transformer': transformer['transformer'],
+            'text_encoder': text_encoders['text_encoder'],
+            'tokenizer': text_encoders['tokenizer'],
+            'text_encoder_2': text_encoders['text_encoder_2'],
+            'tokenizer_2': text_encoders['tokenizer_2'],
+            't5_encoder': text_encoders['t5_encoder'],
+            't5_tokenizer': text_encoders['t5_tokenizer'],
+            'vae': vae['vae'],
+            'device': device,
+            'model_id': model_id,
+        }}
+
+class SD3TransformerLoader(NodeBase):
+    def execute(self, model_id, dtype, device):
+        import os
+        model_id = model_id or 'stabilityai/stable-diffusion-3.5-large'
+
+        local_files_only = is_local_files_only(model_id)
+
+        if local_files_only:
+            model_path = os.path.join(get_repo_path(model_id), "transformer")
+        else:
+            model_path = model_id
+
+        model = SD3Transformer2DModel.from_pretrained(
+            model_path,
+            torch_dtype=dtype,
+            subfolder="transformer" if not local_files_only else None,
+            token=HF_TOKEN,
+            local_files_only=local_files_only,
+        )
         model = self.mm_add(model, priority=3)
- 
-        return { 'transformer': { 'model': model, 'device': device } }
+
+        return { 'model': { 'transformer': model, 'device': device, 'model_id': model_id } }
 
 
 class SD3TextEncodersLoader(NodeBase):
     def execute(self, model_id, dtype, load_t5, device):
         from transformers import CLIPTextModelWithProjection, CLIPTokenizer, T5EncoderModel, T5TokenizerFast
 
-        text_encoder = CLIPTextModelWithProjection.from_pretrained(model_id, subfolder="text_encoder", torch_dtype=dtype, token=HF_TOKEN)
-        tokenizer = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer", torch_dtype=dtype, token=HF_TOKEN)
-        text_encoder_2 = CLIPTextModelWithProjection.from_pretrained(model_id, subfolder="text_encoder_2", torch_dtype=dtype, token=HF_TOKEN)
-        tokenizer_2 = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer_2", torch_dtype=dtype, token=HF_TOKEN)
+        model_id = model_id or 'stabilityai/stable-diffusion-3.5-large'
+
+        model_cfg = {
+            'torch_dtype': dtype,
+            'token': HF_TOKEN,
+            'local_files_only': is_local_files_only(model_id),
+            #'use_safetensors': True,
+        }
+
+        text_encoder = CLIPTextModelWithProjection.from_pretrained(model_id, subfolder="text_encoder", **model_cfg)
+        tokenizer = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer", **model_cfg)
+        text_encoder_2 = CLIPTextModelWithProjection.from_pretrained(model_id, subfolder="text_encoder_2", **model_cfg)
+        tokenizer_2 = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer_2", **model_cfg)
         text_encoder = self.mm_add(text_encoder, priority=1)
         text_encoder_2 = self.mm_add(text_encoder_2, priority=1)
 
         t5_encoder = None
         t5_tokenizer = None
         if load_t5:
-            t5_encoder = T5EncoderModel.from_pretrained(model_id, subfolder="text_encoder_3", torch_dtype=dtype, token=HF_TOKEN)
-            t5_tokenizer = T5TokenizerFast.from_pretrained(model_id, subfolder="tokenizer_3", torch_dtype=dtype, token=HF_TOKEN)
-            t5_encoder = self.mm_add(t5_encoder, priority=1)
+            t5_encoder = T5EncoderModel.from_pretrained(model_id, subfolder="text_encoder_3", **model_cfg)
+            t5_tokenizer = T5TokenizerFast.from_pretrained(model_id, subfolder="tokenizer_3", **model_cfg)
+            t5_encoder = self.mm_add(t5_encoder, priority=0)
 
-        return { 'text_encoders': {
+        return { 'model': {
             'text_encoder': text_encoder,
             'tokenizer': tokenizer,
             'text_encoder_2': text_encoder_2,
             'tokenizer_2': tokenizer_2,
             't5_encoder': t5_encoder,
             't5_tokenizer': t5_tokenizer,
-            'device': device
+            'device': device,
+            'model_id': model_id,
         }}
 
 class SD3PromptEncoder(NodeBase):
-    def execute(self, text_encoders, prompt, prompt_2, prompt_3, prompt_scale, prompt_scale_2, prompt_scale_3):        
-        model_id = getattr(self.mm_get(text_encoders['text_encoder']).config, '_name_or_path')
-        device = text_encoders['device']
+    def execute(self, text_encoders, prompt, prompt_2, prompt_3, prompt_scale, prompt_scale_2, prompt_scale_3):
+        model_id = text_encoders['model_id']
+
         pipe = StableDiffusion3Pipeline.from_pretrained(
             model_id,
             local_files_only=True,
@@ -62,11 +142,16 @@ class SD3PromptEncoder(NodeBase):
             scheduler=None,
             text_encoder=self.mm_get(text_encoders['text_encoder']),
             text_encoder_2=self.mm_get(text_encoders['text_encoder_2']),
-            text_encoder_3=self.mm_get(text_encoders['t5_encoder']) if text_encoders['t5_encoder'] else None,
+            text_encoder_3=self.mm_get(text_encoders['t5_encoder']),
             tokenizer=text_encoders['tokenizer'],
             tokenizer_2=text_encoders['tokenizer_2'],
             tokenizer_3=text_encoders['t5_tokenizer'],
         )
+
+        return { 'embeds': self.encode_prompt(pipe, text_encoders, prompt, prompt_2, prompt_3, prompt_scale, prompt_scale_2, prompt_scale_3) }
+    
+    def encode_prompt(self, pipe, text_encoders, prompt="", prompt_2="", prompt_3="", prompt_scale=1.0, prompt_scale_2=1.0, prompt_scale_3=1.0):
+        device = text_encoders['device']
 
         prompt = prompt or ""
         prompt_2 = prompt_2 or prompt
@@ -124,29 +209,39 @@ class SD3PromptEncoder(NodeBase):
 
         pooled_prompt_embeds = torch.cat([pooled_prompt_embed, pooled_prompt_2_embed], dim=-1).to('cpu')
 
-        del pipe, prompt_embed, pooled_prompt_embed, prompt_2_embed, pooled_prompt_2_embed, t5_prompt_embed
+        del prompt_embed, pooled_prompt_embed, prompt_2_embed, pooled_prompt_2_embed, t5_prompt_embed
         memory_flush()
 
-        return { 'embeds': { 'prompt_embeds': prompt_embeds, 'pooled_prompt_embeds': pooled_prompt_embeds } }
+        return { 'prompt_embeds': prompt_embeds, 'pooled_prompt_embeds': pooled_prompt_embeds }
+
+class SD3SimplePromptEncoder(SD3PromptEncoder):
+    def execute(self, text_encoders, prompt, negative_prompt):
+        model_id = text_encoders['model_id']
+
+        pipe = StableDiffusion3Pipeline.from_pretrained(
+            model_id,
+            local_files_only=True,
+            transformer=None,
+            vae=None,
+            scheduler=None,
+            text_encoder=self.mm_get(text_encoders['text_encoder']),
+            text_encoder_2=self.mm_get(text_encoders['text_encoder_2']),
+            text_encoder_3=self.mm_get(text_encoders['t5_encoder']),
+            tokenizer=text_encoders['tokenizer'],
+            tokenizer_2=text_encoders['tokenizer_2'],
+            tokenizer_3=text_encoders['t5_tokenizer'],
+        )
+
+        return { 'embeds': {
+            'positive_embeds': self.encode_prompt(pipe, text_encoders, prompt),
+            'negative_embeds': self.encode_prompt(pipe, text_encoders, negative_prompt),
+        }}
 
 class SD3Sampler(NodeBase):
-    def execute(self,
-                transformer,
-                positive,
-                negative,
-                latents_in,
-                seed,
-                scheduler,
-                width,
-                height,
-                steps,
-                cfg):
+    def __init__(self, node_id):
+        super().__init__(node_id)
 
-        device = transformer['device']        
-        transformer_model = self.mm_load(transformer['model'], device)
-        model_id = transformer_model.config['_name_or_path']
-
-        dummy_vae = AutoencoderKL(
+        self.dummy_vae = AutoencoderKL(
             in_channels=3,
             out_channels=3,
             down_block_types=['DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'],
@@ -156,7 +251,7 @@ class SD3Sampler(NodeBase):
             latent_channels=16,
         )
 
-        scheduler_config = {
+        self.schedulers_config = {
             'FlowMatchEulerDiscreteScheduler': {
                 'num_train_timesteps': 1000,
                 'shift': 3.0,
@@ -172,8 +267,26 @@ class SD3Sampler(NodeBase):
                 'shift': 3.0,
             }
         }
-        scheduler_cls = getattr(import_module("diffusers"), scheduler)
-        scheduler_cls = scheduler_cls.from_config(scheduler_config[scheduler])
+
+    def execute(self,
+                transformer,
+                prompt,
+                negative_prompt,
+                latents_in,
+                seed,
+                scheduler,
+                width,
+                height,
+                steps,
+                cfg,
+                shift,
+                use_dynamic_shifting):
+        
+        # 1. Prepare the pipeline
+        device = transformer['device']
+        transformer_model = self.mm_load(transformer['transformer'], device)
+        model_id = transformer['model_id']
+        generator = torch.Generator(device=device).manual_seed(seed)
 
         pipe = StableDiffusion3Pipeline.from_pretrained(
             model_id,
@@ -184,32 +297,78 @@ class SD3Sampler(NodeBase):
             tokenizer=None,
             tokenizer_2=None,
             tokenizer_3=None,
-            scheduler=scheduler_cls,
-            vae=dummy_vae,
+            scheduler=None,
+            vae=self.dummy_vae,
             local_files_only=True,
         ).to(device)
+
+        # 2. Create the scheduler
+        if scheduler == 'FlowMatchHeunDiscreteScheduler':
+            from diffusers import FlowMatchHeunDiscreteScheduler as SchedulerCls
+            use_dynamic_shifting = False # not supported by Heun
+        else:
+            from diffusers import FlowMatchEulerDiscreteScheduler as SchedulerCls
+
+        scheduler_config = self.schedulers_config[scheduler]
+        mu = None
+        if use_dynamic_shifting:
+            mu = calculate_mu(width, height,
+                            patch_size=transformer_model.config.patch_size,
+                            base_image_seq_len=scheduler_config['base_image_seq_len'],
+                            max_image_seq_len=scheduler_config['max_image_seq_len'],
+                            base_shift=scheduler_config['base_shift'],
+                            max_shift=scheduler_config['max_shift'])
+
+        pipe.scheduler = SchedulerCls.from_config(scheduler_config, shift=shift, use_dynamic_shifting=use_dynamic_shifting)
+
+        """
+        batch_size = positive['prompt_embeds'].shape[0]
+        num_images_per_prompt = 1 # TODO: make this dynamic
+        num_channels_latents = pipe.transformer.config.in_channels
+
+        latents = pipe.prepare_latents(
+            batch_size * num_images_per_prompt,
+            num_channels_latents,
+            height,
+            width,
+            positive['prompt_embeds'].dtype,
+            transformer_model.device,
+            generator,
+            latents_in,
+        )
+        """
+
+        # 3. Prepare the prompts
+        if 'positive_embeds' in prompt:
+            positive = prompt['positive_embeds']
+            negative = prompt['negative_embeds']
+        else:
+            positive = prompt
+            negative = negative_prompt
 
         if not negative:
             negative = { 'prompt_embeds': torch.zeros_like(positive['prompt_embeds']), 'pooled_prompt_embeds': torch.zeros_like(positive['pooled_prompt_embeds']) }
 
+        # 4. Run the pipeline
         with torch.inference_mode():
-        #with torch.no_grad():
             latents = pipe(
-                generator=torch.Generator('cpu').manual_seed(seed),
+                generator=generator,
                 prompt_embeds=positive['prompt_embeds'].to(device, dtype=transformer_model.dtype),
                 pooled_prompt_embeds=positive['pooled_prompt_embeds'].to(device, dtype=transformer_model.dtype),
                 negative_prompt_embeds=negative['prompt_embeds'].to(device, dtype=transformer_model.dtype),
                 negative_pooled_prompt_embeds=negative['pooled_prompt_embeds'].to(device, dtype=transformer_model.dtype),
+                #latents=latents,
                 width=width,
                 height=height,
                 guidance_scale=cfg,
                 num_inference_steps=steps,
                 output_type="latent",
+                mu=mu,
             ).images
 
         latents = latents.to('cpu')
 
-        del pipe, positive, negative, transformer_model, scheduler_cls
+        del pipe
         memory_flush()
 
         return { 'latents': latents }

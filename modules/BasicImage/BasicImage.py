@@ -18,13 +18,14 @@ class Preview(NodeBase):
             raise ValueError("VAE is required to decode latents")
 
         device = vae['device']
-        vae = self.mm_load(vae['model'], device)
+        model_id = vae['vae'] if 'vae' in vae else vae['model']
+        model = self.mm_load(model_id, device)
 
-        latents = 1 / vae.config['scaling_factor'] * images
+        latents = 1 / model.config['scaling_factor'] * images
 
         #with torch.no_grad():
         with torch.inference_mode():
-            images = vae.decode(latents.to(device, dtype=vae.dtype), return_dict=False)[0][0]
+            images = model.decode(latents.to(device, dtype=model.dtype), return_dict=False)[0][0]
 
         del latents
 

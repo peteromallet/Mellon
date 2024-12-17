@@ -2,9 +2,19 @@ import logging
 import os
 from config import config
 import torch # warm up since we are going to use it anyway
+import numpy as np
+import random
 
 if config.hf['cache_dir']:
     os.environ['HF_HOME'] = config.hf['cache_dir']
+
+#torch.cuda.manual_seed(0)
+#torch.cuda.manual_seed_all(0)
+#torch.backends.cudnn.deterministic = True
+#torch.backends.cudnn.benchmark = False
+#np.random.seed(0)
+#random.seed(0)
+#os.environ['PYTHONHASHSEED'] = str(0)
 
 # initialize logging
 logging.basicConfig(level=config.log['level'], format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y%m%d %H.%M.%S")

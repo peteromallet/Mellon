@@ -1,19 +1,25 @@
 import torch
 from diffusers import AutoencoderKL
 from utils.node_utils import NodeBase
-from utils.memory_manager import memory_flush, memory_manager
+#from utils.memory_manager import memory_flush, memory_manager
+from utils.hf_utils import is_local_files_only
 
 class LoadVAE(NodeBase):
-    is_compiled = False
+    #is_compiled = False
     
-    def execute(self, model_id, device, compile):
-        if not compile and self.is_compiled:
-            self.mm_unload(vae)
+    def execute(self, model_id, device):
+        #if not compile and self.is_compiled:
+        #    self.mm_unload(vae)
 
+        vae = AutoencoderKL.from_pretrained(
+            model_id, 
+            subfolder="vae", 
+            local_files_only=is_local_files_only(model_id),
+        )
 
-        vae = AutoencoderKL.from_pretrained(model_id, subfolder="vae")
         vae = self.mm_add(vae, priority=2)
         
+        """
         if compile:
             # we free up all the GPU memory to perform the intensive compilation
             memory_manager.unload_all(exclude=vae)
@@ -29,5 +35,6 @@ class LoadVAE(NodeBase):
             del compiled
             memory_flush(deep=True)
             self.is_compiled = True
+        """
 
-        return { 'vae': { 'model': vae, 'device': device } }
+        return { 'model': { 'vae': vae, 'device': device } }

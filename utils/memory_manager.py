@@ -108,6 +108,8 @@ class MemoryManager:
 
         for m in model_id:
             if m in self.cache:
+                logger.debug(f"Deleting model {m}")
+                #self.unload_model(m)
                 del self.cache[m]['model']
                 del self.cache[m]
 
@@ -124,6 +126,5 @@ class MemoryManager:
 
     def is_cached(self, model_id):
         return model_id in self.cache
-
 
 memory_manager = MemoryManager()

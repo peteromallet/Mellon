@@ -30,3 +30,17 @@ def list_local_models():
 
     local_models.sort()
     return local_models
+
+def get_repo_path(model_id):
+    cache_dir = config.hf['cache_dir']
+    cache_info = scan_cache_dir(cache_dir)
+    for repo in cache_info.repos:
+        if repo.repo_id == model_id:
+            latest_revision = list(repo.revisions)[-1] if repo.revisions else None
+            if latest_revision:
+                return os.path.join(repo.repo_path, latest_revision.snapshot_path)
+
+    return None
+
+def is_local_files_only(model_id):
+    return config.hf['online_status'] == 'Local files only' or (config.hf['online_status'] == 'Connect if needed' and model_id in list_local_models())

@@ -1,21 +1,51 @@
-from utils.torch_utils import device_list, default_device
-import torch
-
-def to_dtype(dtype, params):
-    return {
-        'auto': None,
-        'float32': torch.float32,
-        'float16': torch.float16,
-        'bfloat16': torch.bfloat16,
-        'float8_e4m3fn': torch.float8_e4m3fn,
-    }[dtype]
+from utils.torch_utils import device_list, default_device, str_to_dtype
+from utils.hf_utils import list_local_models
 
 MODULE_MAP = {
-    'LoadSD3Transformer': {
-        'label': 'SD3 Transformer loader',
-        'description': 'Load the Transformer of a Stable Diffusion model',
+    'SD3UnifiedLoader': {
+        'label': 'SD3 Unified Loader',
+        'category': 'samplers',
         'params': {
-            'transformer': {
+            'model': {
+                'label': 'SD3 Pipeline',
+                'type': 'SD3Pipeline',
+                'display': 'output',
+            },
+            'model_id': {
+                'label': 'Model ID',
+                'type': 'string',
+                'options': list_local_models(),
+                'display': 'autocomplete',
+                'no_validation': True,
+                'default': 'stabilityai/stable-diffusion-3.5-large',
+            },
+            'dtype': {
+                'label': 'Dtype',
+                'type': 'string',
+                'options': ['auto', 'float32', 'float16', 'bfloat16'],
+                'default': 'bfloat16',
+                'postProcess': str_to_dtype,
+            },
+            'device': {
+                'label': 'Device',
+                'type': 'string',
+                'options': device_list,
+                'default': default_device,
+            },
+            'load_t5': {
+                'label': 'Load T5 Encoder',
+                'type': 'boolean',
+                'default': True,
+            },
+        },
+    },
+
+    'SD3TransformerLoader': {
+        'label': 'SD3 Transformer loader',
+        'description': 'Load the Transformer of an SD3 model',
+        'category': 'samplers',
+        'params': {
+            'model': {
                 'label': 'Transformer',
                 'type': 'SD3Transformer2DModel',
                 'display': 'output',
@@ -23,13 +53,16 @@ MODULE_MAP = {
             'model_id': {
                 'label': 'Model ID',
                 'type': 'string',
+                'options': list_local_models(),
+                'display': 'autocomplete',
+                'no_validation': True,
                 'default': 'stabilityai/stable-diffusion-3.5-large',
             },
             'dtype': {
                 'label': 'dtype',
-                'options': ['auto', 'float32', 'float16', 'bfloat16', 'float8_e4m3fn'],
+                'options': ['auto', 'float32', 'float16', 'bfloat16'],
                 'default': 'bfloat16',
-                'postProcess': to_dtype,
+                'postProcess': str_to_dtype,
             },
             'device': {
                 'label': 'Device',
@@ -45,7 +78,7 @@ MODULE_MAP = {
         'description': 'Load both the CLIP and T5 Text Encoders',
         'category': 'text-encoders',
         'params': {
-            'text_encoders': {
+            'model': {
                 'label': 'SD3 Encoders',
                 'display': 'output',
                 'type': 'SD3TextEncoders',
@@ -53,11 +86,15 @@ MODULE_MAP = {
             'model_id': {
                 'label': 'Model ID',
                 'type': 'string',
+                'options': list_local_models(),
+                'display': 'autocomplete',
+                'no_validation': True,
+                'default': '',
             },
             'dtype': {
                 'label': 'Dtype',
                 'type': 'string',
-                'options': ['auto', 'float32', 'float16', 'bfloat16', 'float8_e4m3fn'],
+                'options': ['auto', 'float32', 'float16', 'bfloat16'],
                 'default': 'bfloat16',
             },
             'load_t5': {
@@ -74,13 +111,42 @@ MODULE_MAP = {
         },
     },
 
-    'SD3PromptEncoder': {
-        'label': 'SD3 Prompt Encoder',
+    'SD3SimplePromptEncoder': {
+        'label': 'SD3 Simple Prompt Encoder',
+        'description': 'Encode a prompt into embeddings for SD3',
+        'category': 'text-encoders',
         'params': {
             'text_encoders': {
-                'label': 'SD3 Encoders',
+                'label': 'SD3 Encoders | SD3 Pipeline',
                 'display': 'input',
-                'type': 'SD3TextEncoders',
+                'type': ['SD3TextEncoders', 'SD3Pipeline'],
+            },
+            'embeds': {
+                'label': 'Prompt embeds',
+                'display': 'output',
+                'type': 'SD3Embeddings',
+            },
+            'prompt': {
+                'label': 'Positive Prompt',
+                'type': 'string',
+                'display': 'textarea',
+            },
+            'negative_prompt': {
+                'label': 'Negative Prompt',
+                'type': 'string',
+                'display': 'textarea',
+            },
+        },
+    },
+
+    'SD3PromptEncoder': {
+        'label': 'SD3 Prompt Encoder',
+        'category': 'text-encoders',
+        'params': {
+            'text_encoders': {
+                'label': 'SD3 Encoders | SD3 Pipeline',
+                'display': 'input',
+                'type': ['SD3TextEncoders', 'SD3Pipeline'],
             },
             'embeds': {
                 'label': 'Embeddings',
@@ -137,26 +203,25 @@ MODULE_MAP = {
         },
     },
 
-
     'SD3Sampler': {
         'label': 'SD3 Sampler',
-        'description': 'A custom sampler for Stable Diffusion 3',
+        'category': 'samplers',
         'style': {
             'maxWidth': '320px',
         },
         'params': {
             'transformer': {
-                'label': 'Transformer',
+                'label': 'Transformer | SD3 Pipeline',
                 'display': 'input',
-                'type': 'SD3Transformer2DModel',
+                'type': ['SD3Transformer2DModel', 'SD3Pipeline'],
             },
-            'positive': {
-                'label': 'Positive',
+            'prompt': {
+                'label': 'Prompt',
                 'display': 'input',
                 'type': 'SD3Embeddings',
             },
-            'negative': {
-                'label': 'Negative',
+            'negative_prompt': {
+                'label': 'Negative prompt',
                 'display': 'input',
                 'type': 'SD3Embeddings',
             },
@@ -165,12 +230,10 @@ MODULE_MAP = {
                 'display': 'input',
                 'type': 'latents',
             },
-            'seed': {
-                'label': 'Seed',
-                'type': 'int',
-                'default': 0,
-                'min': 0,
-                #'max': (1<<53)-1, # max JS integer
+            'latents': {
+                'label': 'Latents',
+                'type': 'latent',
+                'display': 'output',
             },
             'width': {
                 'label': 'Width',
@@ -191,6 +254,13 @@ MODULE_MAP = {
                 'max': 8192,
                 'step': 8,
                 'group': 'dimensions',
+            },
+            'seed': {
+                'label': 'Seed',
+                'type': 'int',
+                'default': 0,
+                'min': 0,
+                #'max': (1<<53)-1, # max JS integer
             },
             'resolution_picker': {
                 'label': 'Resolution',
@@ -234,10 +304,20 @@ MODULE_MAP = {
                 },
                 'default': 'FlowMatchEulerDiscreteScheduler',
             },
-            'latents': {
-                'label': 'Latents',
-                'type': 'latent',
-                'display': 'output',
+            'shift': {
+                'label': 'Shift',
+                'type': 'float',
+                'default': 3.0,
+                'min': 0,
+                'max': 12,
+                'step': 0.05,
+                'group': { 'key': 'scheduler', 'label': 'Scheduler options', 'display': 'collapse' },
+            },
+            'use_dynamic_shifting': {
+                'label': 'Use dynamic shifting',
+                'type': 'boolean',
+                'default': False,
+                'group': 'scheduler',
             },
         },
     },

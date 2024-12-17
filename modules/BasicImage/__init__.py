@@ -4,8 +4,14 @@ MODULE_MAP = {
         'description': 'Preview an image',
         'category': 'image',
         'params': {
+            'vae': {
+                'label': 'VAE',
+                'display': 'input',
+                'type': ['vae', 'SD3Pipeline'],
+                'description': 'VAE to decode latents. Required only if input images are latents.',
+            },
             'images': {
-                'label': 'Images or Latents',
+                'label': 'Images | Latents',
                 'display': 'input',
                 'type': ['image', 'latent'],
             },
@@ -29,12 +35,6 @@ MODULE_MAP = {
                 'display': 'ui',
                 'source': 'images_out',
                 'type': 'image',
-            },
-            'vae': {
-                'label': 'VAE',
-                'display': 'input',
-                'type': 'vae',
-                'description': 'VAE to decode latents. Required only if input images are latents.',
             },
         },
     },

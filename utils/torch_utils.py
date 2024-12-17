@@ -67,4 +67,4 @@ def toTensor(image):
     return tt.PILToTensor()(image) / 255.0
 
 def toPIL(tensor):
-    return tt.ToPILImage()(tensor.clamp(0, 1))
+    return tt.ToPILImage()(tensor.clamp(0, 1).float())
