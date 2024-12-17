@@ -52,11 +52,9 @@ You should be able to access the UI at `http://<ip_address>:8080`.
 
 ## Usage
 
-This is just an alpha-stage development version. Not much is supported but you can start from the generic Diffusion Pipeline that should load more or less any model:
+This is just an alpha-stage development version. Not much is supported but you can start from the SD35 Pipeline:
 
 ![Mellon workflow](./mellon_basic_wf.jpg)
-
-Use a Stable Diffusion SD1.5 model for the UNet and VAE, eg: `lykon/absolute-reality-1.81`.
 
 ## How it works
 
