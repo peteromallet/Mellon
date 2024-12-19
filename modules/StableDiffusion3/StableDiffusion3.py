@@ -299,6 +299,8 @@ class SD3Sampler(NodeBase):
         model_id = transformer['model_id']
         generator = torch.Generator(device=device).manual_seed(seed)
 
+        vae = self.mm_flash_load(self.dummy_vae, device=device)
+
         pipe = StableDiffusion3Pipeline.from_pretrained(
             model_id,
             transformer=transformer_model,
@@ -309,7 +311,7 @@ class SD3Sampler(NodeBase):
             tokenizer_2=None,
             tokenizer_3=None,
             scheduler=None,
-            vae=self.dummy_vae.to(device),
+            vae=vae,
             local_files_only=True,
         )
 
@@ -362,20 +364,30 @@ class SD3Sampler(NodeBase):
 
         # 4. Run the pipeline
         with torch.inference_mode():
-            latents = pipe(
-                generator=generator,
-                prompt_embeds=positive['prompt_embeds'].to(device, dtype=transformer_model.dtype),
-                pooled_prompt_embeds=positive['pooled_prompt_embeds'].to(device, dtype=transformer_model.dtype),
-                negative_prompt_embeds=negative['prompt_embeds'].to(device, dtype=transformer_model.dtype),
-                negative_pooled_prompt_embeds=negative['pooled_prompt_embeds'].to(device, dtype=transformer_model.dtype),
-                #latents=latents,
-                width=width,
-                height=height,
-                guidance_scale=cfg,
-                num_inference_steps=steps,
-                output_type="latent",
-                mu=mu,
-            ).images
+            while True:
+                try:
+                    latents = pipe(
+                        generator=generator,
+                        prompt_embeds=positive['prompt_embeds'].to(device, dtype=transformer_model.dtype),
+                        pooled_prompt_embeds=positive['pooled_prompt_embeds'].to(device, dtype=transformer_model.dtype),
+                        negative_prompt_embeds=negative['prompt_embeds'].to(device, dtype=transformer_model.dtype),
+                        negative_pooled_prompt_embeds=negative['pooled_prompt_embeds'].to(device, dtype=transformer_model.dtype),
+                        #latents=latents,
+                        width=width,
+                        height=height,
+                        guidance_scale=cfg,
+                        num_inference_steps=steps,
+                        output_type="latent",
+                        mu=mu,
+                    ).images
+                    break
+                except torch.OutOfMemoryError as e:
+                    if memory_manager.unload_next(device, exclude=transformer['transformer']):
+                        continue
+                    else:
+                        raise e
+                except Exception as e:
+                    raise e
 
         latents = latents.to('cpu')
 
