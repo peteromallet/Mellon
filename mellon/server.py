@@ -243,7 +243,7 @@ class WebServer:
                     #"memory": f"{memory_usage/1024**3:.2f}"
                 })
 
-                logger.debug(f"Node {node} ({module_name}.{action_name}) executed in {execution_time:.3f}s")
+                logger.debug(f"Node {module_name}.{action_name} executed in {execution_time:.3f}s")
 
                 # TODO: this is just a placeholder for now
 

@@ -155,10 +155,12 @@ class NodeBase():
 
                 # options can be in the format: [ 1, 2, 3 ] or { '1': { }, '2': { }, '3': { } }
                 if isinstance(options, list):
-                    if values[key] not in options:
+                    val = [values[key]] if isinstance(values[key], str) else values[key]
+                    if any(v not in options for v in val):
                         raise ValueError(f"Invalid value for {key}: {values[key]}")
                 elif isinstance(options, dict):
-                    if not options[values[key]]:
+                    val = [values[key]] if isinstance(values[key], str) else values[key]
+                    if any(v not in options for v in val):
                         raise ValueError(f"Invalid value for {key}: {values[key]}")
                 else:
                     raise ValueError(f"Invalid options for {key}: {options}")
@@ -205,6 +207,11 @@ class NodeBase():
     def mm_unload(self, model_id):
         return memory_manager.unload_model(model_id) if model_id else None
 
-    def mm_update(self, model_id, model=None, priority=None):
-        return memory_manager.update_model(model_id, model=model, priority=priority) if model_id else None
+    def mm_update(self, model_id, model=None, priority=None, unload=True):
+        return memory_manager.update_model(model_id, model=model, priority=priority, unload=unload) if model_id else None
     
+    def mm_flash_load(self, model, model_id=None, device='cpu', priority=3):
+        model_id = f'{self.node_id}.{model_id}' if model_id else f'{self.node_id}.{nanoid.generate(size=8)}'
+        device = device if device else str(model.device)
+
+        return memory_manager.flash_load(model, model_id, device=device, priority=priority)

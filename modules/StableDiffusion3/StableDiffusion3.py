@@ -1,9 +1,12 @@
+import logging
+logger = logging.getLogger('mellon')
 import torch
 from diffusers import SD3Transformer2DModel, AutoencoderKL, StableDiffusion3Pipeline
 from utils.node_utils import NodeBase
-from utils.memory_manager import memory_flush
+from utils.memory_manager import memory_flush, memory_manager
 from utils.hf_utils import is_local_files_only, get_repo_path
 from config import config
+from mellon.quantization import NodeQuantization
 
 HF_TOKEN = config.hf['token']
 
@@ -38,7 +41,7 @@ class SD3UnifiedLoader(NodeBase):
             model_id,
             dtype,
             device,
-            load_t5,
+            load_t5
         ):
         from modules.VAE.VAE import LoadVAE
 
@@ -68,32 +71,37 @@ class SD3UnifiedLoader(NodeBase):
             'model_id': model_id,
         }}
 
-class SD3TransformerLoader(NodeBase):
-    def execute(self, model_id, dtype, device):
+class SD3TransformerLoader(NodeBase, NodeQuantization):
+    def execute(self, model_id, dtype, device, quantization, **kwargs):
         import os
         model_id = model_id or 'stabilityai/stable-diffusion-3.5-large'
 
         local_files_only = is_local_files_only(model_id)
 
+        # overcome bug in diffusers loader with sharded weights
         if local_files_only:
             model_path = os.path.join(get_repo_path(model_id), "transformer")
         else:
             model_path = model_id
 
-        model = SD3Transformer2DModel.from_pretrained(
+        transformer_model = SD3Transformer2DModel.from_pretrained(
             model_path,
             torch_dtype=dtype,
             subfolder="transformer" if not local_files_only else None,
             token=HF_TOKEN,
             local_files_only=local_files_only,
         )
-        model = self.mm_add(model, priority=3)
 
-        return { 'model': { 'transformer': model, 'device': device, 'model_id': model_id } }
+        mm_id = self.mm_add(transformer_model, priority=3)
+
+        if quantization != 'none':
+            self.quantize(quantization, model=mm_id, device=device, **kwargs)
+
+        return { 'model': { 'transformer': mm_id, 'device': device, 'model_id': model_id } }
 
 
-class SD3TextEncodersLoader(NodeBase):
-    def execute(self, model_id, dtype, load_t5, device):
+class SD3TextEncodersLoader(NodeBase, NodeQuantization):
+    def execute(self, model_id, dtype, load_t5, device, quantization, **kwargs):
         from transformers import CLIPTextModelWithProjection, CLIPTokenizer, T5EncoderModel, T5TokenizerFast
 
         model_id = model_id or 'stabilityai/stable-diffusion-3.5-large'
@@ -118,6 +126,9 @@ class SD3TextEncodersLoader(NodeBase):
             t5_encoder = T5EncoderModel.from_pretrained(model_id, subfolder="text_encoder_3", **model_cfg)
             t5_tokenizer = T5TokenizerFast.from_pretrained(model_id, subfolder="tokenizer_3", **model_cfg)
             t5_encoder = self.mm_add(t5_encoder, priority=0)
+
+        if quantization != 'none' and t5_encoder:
+            self.quantize(quantization, model=t5_encoder, device=device, **kwargs)
 
         return { 'model': {
             'text_encoder': text_encoder,
@@ -298,9 +309,9 @@ class SD3Sampler(NodeBase):
             tokenizer_2=None,
             tokenizer_3=None,
             scheduler=None,
-            vae=self.dummy_vae,
+            vae=self.dummy_vae.to(device),
             local_files_only=True,
-        ).to(device)
+        )
 
         # 2. Create the scheduler
         if scheduler == 'FlowMatchHeunDiscreteScheduler':

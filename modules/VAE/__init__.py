@@ -17,7 +17,6 @@ MODULE_MAP = {
                 'options': list_local_models(),
                 'display': 'autocomplete',
                 'no_validation': True,
-                'default': 'stabilityai/stable-diffusion-3.5-large',
             },
             'device': {
                 'label': 'Device',

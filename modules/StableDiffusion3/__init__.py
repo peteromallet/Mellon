@@ -89,7 +89,7 @@ MODULE_MAP = {
                 'options': list_local_models(),
                 'display': 'autocomplete',
                 'no_validation': True,
-                'default': '',
+                'default': 'stabilityai/stable-diffusion-3.5-large',
             },
             'dtype': {
                 'label': 'Dtype',
@@ -97,16 +97,16 @@ MODULE_MAP = {
                 'options': ['auto', 'float32', 'float16', 'bfloat16'],
                 'default': 'bfloat16',
             },
-            'load_t5': {
-                'label': 'Load T5 Encoder',
-                'type': 'boolean',
-                'default': True,
-            },
             'device': {
                 'label': 'Device',
                 'type': 'string',
                 'options': device_list,
                 'default': default_device,
+            },
+            'load_t5': {
+                'label': 'Load T5 Encoder',
+                'type': 'boolean',
+                'default': True,
             },
         },
     },
@@ -255,13 +255,6 @@ MODULE_MAP = {
                 'step': 8,
                 'group': 'dimensions',
             },
-            'seed': {
-                'label': 'Seed',
-                'type': 'int',
-                'default': 0,
-                'min': 0,
-                #'max': (1<<53)-1, # max JS integer
-            },
             'resolution_picker': {
                 'label': 'Resolution',
                 'display': 'ui',
@@ -279,6 +272,13 @@ MODULE_MAP = {
                 ],
                 'target': ['width', 'height'],
                 'group': 'dimensions',
+            },
+            'seed': {
+                'label': 'Seed',
+                'type': 'int',
+                'default': 0,
+                'min': 0,
+                #'max': (1<<53)-1, # max JS integer
             },
             'steps': {
                 'label': 'Steps',
@@ -322,3 +322,102 @@ MODULE_MAP = {
         },
     },
 }
+
+quantization_params = {
+    'quantization': {
+        'label': 'Quantization',
+        'options': {
+            'none': 'None',
+            'quanto': 'Quanto',
+            'torchao': 'TorchAO',
+        },
+        'default': 'none',
+        'onChange': 'showGroup',
+    },
+
+    # Quanto Quantization
+    'quanto_weights': {
+        'label': 'Weights',
+        'options': ['int2', 'int4', 'int8', 'float8'],
+        'default': 'float8',
+        'group': { 'key': 'quanto', 'label': 'Quanto Quantization', 'display': 'group', 'hidden': True, 'direction': 'column' },
+    },
+    'quanto_activations': {
+        'label': 'Activations',
+        'options': ['none', 'int2', 'int4', 'int8', 'float8'],
+        'default': 'none',
+        'group': 'quanto'
+    },
+    'quanto_exclude': {
+        'label': 'Exclude blocks',
+        'description': 'Comma separated list of block names to exclude from quantization',
+        'type': 'string',
+        'default': '',
+        'group': 'quanto'
+    },
+
+    # TorchAO Quantization
+    'torchao_weights': {
+        'label': 'Weights',
+        'options': {
+            'int8_weight_only': 'int8 weight',
+            'int4_weight_only': 'int4 weight',
+            'int8_dynamic_activation_int8_weight': 'int8 weight + activation',
+        },
+        'default': 'int8_weight_only',
+        'group': { 'key': 'torchao', 'label': 'TorchAO Quantization', 'display': 'group', 'hidden': True, 'direction': 'column' },
+    },
+    'torchao_individual_layers': {
+        'label': 'Quantize each layer individually',
+        'type': 'boolean',
+        'default': False,
+        'group': 'torchao'
+    },
+}
+
+MODULE_MAP['SD3TransformerLoader']['params'].update(quantization_params)
+MODULE_MAP['SD3TextEncodersLoader']['params'].update(quantization_params)
+"""
+MODULE_MAP['SD3TextEncodersLoader']['params'].update({
+    'quanto_apply_clip_l': {
+        'label': 'Apply to CLIP L',
+        'type': 'boolean',
+        'display': 'checkbox',
+        'default': False,
+        'group': 'quanto'
+    },
+    'quanto_apply_clip_g': {
+        'label': 'Apply to CLIP G',
+        'type': 'boolean',
+        'display': 'checkbox',
+        'default': False,
+        'group': 'quanto'
+    },
+    'quanto_apply_t5': {
+        'label': 'Apply to T5',
+        'type': 'boolean',
+        'display': 'checkbox',
+        'default': True,
+        'group': 'quanto'
+    },
+})
+MODULE_MAP['SD3UnifiedLoader']['params'].update(quantization_params)
+MODULE_MAP['SD3UnifiedLoader']['params'].update({
+    'apply_to_transformer': {
+        'label': 'Apply to Transformer',
+        'type': 'boolean',
+        'display': 'checkbox',
+        'default': True,
+        'group': 'quanto',
+        'hidden': True,
+    },
+    'apply_to_t5': {
+        'label': 'Apply to T5',
+        'type': 'boolean',
+        'display': 'checkbox',
+        'default': True,
+        'group': 'quanto',
+        'hidden': True,
+    },
+})
+"""

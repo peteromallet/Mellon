@@ -29,15 +29,20 @@ class Config:
         }
 
         self.paths = {
+            'data': self.config.get('paths', 'data', fallback='data'),
             'temp': self.config.get('paths', 'temp', fallback='data/temp'),
         }
 
         for path, value in self.paths.items():
-            if not value.startswith('/'):
+            if not os.path.isabs(value):
                 value = os.path.join(os.path.dirname(__file__), value)
                 self.paths[path] = value
 
             if not os.path.exists(value):
                 os.makedirs(value)
+
+        self.environ = self.config['environ'] if 'environ' in self.config else {}
+        for key, value in self.environ.items():
+            self.environ[key] = self.config.get('environ', key, fallback=None)
 
 config = Config()

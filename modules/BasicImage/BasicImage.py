@@ -2,6 +2,7 @@ from PIL import Image
 import torch
 from utils.torch_utils import toTensor, toPIL
 from utils.node_utils import NodeBase
+from utils.memory_manager import memory_manager
 
 class Preview(NodeBase):
     def execute(self, images, vae):
@@ -22,10 +23,21 @@ class Preview(NodeBase):
         model = self.mm_load(model_id, device)
 
         latents = 1 / model.config['scaling_factor'] * images
+        #latents = self.mm_flash_load(latents, device=device)
 
         #with torch.no_grad():
         with torch.inference_mode():
-            images = model.decode(latents.to(device, dtype=model.dtype), return_dict=False)[0][0]
+            while True:
+                try:
+                    images = model.decode(latents.to(device, dtype=model.dtype), return_dict=False)[0][0]
+                    break
+                except torch.OutOfMemoryError as e:
+                    if memory_manager.unload_next(device, exclude=model_id):
+                        continue
+                    else:
+                        raise e
+                except Exception as e:
+                    raise e
 
         del latents
 

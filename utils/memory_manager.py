@@ -45,6 +45,9 @@ class MemoryManager:
     def get_model(self, model_id):
         return self.cache[model_id]['model'] if model_id in self.cache else None
 
+    def get_model_info(self, model_id):
+        return self.cache[model_id] if model_id in self.cache else None
+
     def load_model(self, model_id, device):
         self.cache[model_id]['last_used'] = time.time()
         x = self.cache[model_id]['model']
@@ -73,11 +76,8 @@ class MemoryManager:
                     'device': device
                 })
                 return x
-
-            except RuntimeError as e:
-                if "out of memory" not in str(e):
-                    raise e
-
+            
+            except torch.OutOfMemoryError as e:
                 if not cache_priority:
                     logger.debug("No more models to unload, cannot free sufficient memory")
                     raise e
@@ -85,6 +85,9 @@ class MemoryManager:
                 next_model_id = cache_priority.pop(0)[2]
                 logger.debug(f"OOM error, unloading lower priority model: {next_model_id}")
                 self.unload_model(next_model_id)
+
+            except Exception as e:
+                raise e
 
 
     def unload_model(self, model_id):
@@ -115,10 +118,11 @@ class MemoryManager:
 
         memory_flush()
 
-    def update_model(self, model_id, model=None, priority=None):
+    def update_model(self, model_id, model=None, priority=None, unload=True):
         if model_id in self.cache:
             if model:
-                self.unload_model(model_id)
+                if unload:
+                    self.unload_model(model_id)
                 self.cache[model_id]['model'] = model
                 memory_flush()
             if priority:
@@ -126,5 +130,34 @@ class MemoryManager:
 
     def is_cached(self, model_id):
         return model_id in self.cache
+    
+    def cache_count(self):
+        return len(self.cache)
+    
+    def flash_load(self, model, model_id, device='cpu', priority=3):
+        model_id = self.add_model(model, model_id, device=device, priority=priority)
+        model = self.load_model(model_id, device)
+        self.delete_model(model_id)
+
+        return model
+    
+    def unload_next(self, device, exclude=[]):
+        if not self.cache:
+            return False
+        
+        if not isinstance(exclude, list):
+            exclude = [exclude]
+
+        # Sort models by priority and last_used
+        cache_priority = []
+        for id, model in self.cache.items():
+            if model['device'] == device and id not in exclude:
+                cache_priority.append((model['priority'], model['last_used'], id))
+
+        cache_priority.sort()
+        next_model_id = cache_priority.pop(0)[2]
+
+        self.unload_model(next_model_id)
+        return True
 
 memory_manager = MemoryManager()
