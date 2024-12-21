@@ -3,6 +3,7 @@ import torch
 import time
 from utils.memory_manager import memory_flush, memory_manager
 import nanoid
+import random
 
 def get_module_params(module_name, class_name):
     params = MODULE_MAP[module_name][class_name]['params'] if module_name in MODULE_MAP and class_name in MODULE_MAP[module_name] else {}
@@ -71,12 +72,19 @@ class NodeBase():
         self._execution_time = 0
 
     def __call__(self, **kwargs):
-        # if the node_id is not set, the class was called directly and not from a node
-        # so we call the execute method directly
+        # if the node_id is not set, the class was called by the user and it's not part of a workflow,
+        # we execute the method directly
         if not self.node_id:
-            return getattr(self, self.CALLBACK)(**kwargs)
+            params = { key: kwargs[key] for key in kwargs if not key.startswith('__') }
+            return getattr(self, self.CALLBACK)(**params)
 
         values = self._validate_params(kwargs)
+
+        # check if there is a field with the name __random__<param>
+        for key in values:
+            if key.startswith('__random__') and values[key] is True:
+                param = key.split('__random__')[1]
+                values[param] = random.randint(0, (1<<53)-1)
 
         execution_time = time.time()
 
@@ -90,7 +98,8 @@ class NodeBase():
                 self._mm_model_ids = []
 
             try:
-                output = getattr(self, self.CALLBACK)(**self.params)
+                params = { key: self.params[key] for key in self.params if not key.startswith('__') }
+                output = getattr(self, self.CALLBACK)(**params)
             except Exception as e:
                 self.params = {}
                 self.output = get_module_output(self.module_name, self.class_name)

@@ -145,8 +145,6 @@ class WebServer:
                     "action": action_name,
                     "category": self.slugify(action['category']) if 'category' in action else "default",
                     "params": params,
-                    #"output": action['output'] if 'output' in action else {},
-                    #"ui": action['ui'] if 'ui' in action else {},
                 }
                 if 'style' in action:
                     nodes[f"{module_name}-{action_name}"]["style"] = action['style']
@@ -210,7 +208,7 @@ class WebServer:
                         elif params[p]["type"] == "3d":
                             ui_fields[p] = { "source": source_key, "type": params[p]["type"] }
                     else:
-                        args[p] = self.node_store[source_id].output[source_key] if source_id else params[p]["value"] if 'value' in params[p] else None
+                        args[p] = self.node_store[source_id].output[source_key] if source_id else params[p]["value"] if 'value' in params[p] else None                        
 
                 if module_name not in self.module_map:
                     raise ValueError("Invalid module")
@@ -236,10 +234,17 @@ class WebServer:
                 
                 execution_time = self.node_store[node]._execution_time if hasattr(self.node_store[node], '_execution_time') else 0
 
+                updateValues = {}
+                if "onAfterNodeExecute" in self.module_map[module_name][action_name]:
+                    for event in self.module_map[module_name][action_name]["onAfterNodeExecute"]:
+                        if event["action"] == "updateValue":
+                            updateValues.update({ event["target"]: self.node_store[node].params[event["target"]] })
+
                 await self.ws_clients[sid].send_json({
                     "type": "executed",
                     "nodeId": node,
                     "time": f"{execution_time:.2f}",
+                    "updateValues": updateValues
                     #"memory": f"{memory_usage/1024**3:.2f}"
                 })
 

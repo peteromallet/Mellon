@@ -5,8 +5,10 @@ from diffusers import SD3Transformer2DModel, AutoencoderKL, StableDiffusion3Pipe
 from utils.node_utils import NodeBase
 from utils.memory_manager import memory_flush, memory_manager
 from utils.hf_utils import is_local_files_only, get_repo_path
+from utils.diffusers_utils import get_clip_prompt_embeds, get_t5_prompt_embeds
 from config import config
 from mellon.quantization import NodeQuantization
+import math
 
 HF_TOKEN = config.hf['token']
 
@@ -24,14 +26,15 @@ def calculate_mu(width: int, height: int,
     seq_len = (width // patch_size) * (height // patch_size)
     seq_len = max(min(seq_len, max_image_seq_len), base_image_seq_len)
 
-    m = (max_shift - base_shift) / (max_image_seq_len - base_image_seq_len)
-    b = base_shift - m * base_image_seq_len
-    mu = seq_len * m + b
+    # this is the default mu calculation
+    #m = (max_shift - base_shift) / (max_image_seq_len - base_image_seq_len)
+    #b = base_shift - m * base_image_seq_len
+    #mu = seq_len * m + b
     
-    # Calculate logarithmic interpolation factor. TODO: check if this is correct
-    #factor = (math.log2(seq_len) - math.log2(base_image_seq_len)) / (math.log2(max_image_seq_len) - math.log2(base_image_seq_len))
-    #factor = max(min(factor, 1.0), 0.0)
-    #mu = base_shift + factor * (max_shift - base_shift)
+    # This is my own mess. TODO: check if this is correct
+    factor = (math.log2(seq_len) - math.log2(base_image_seq_len)) / (math.log2(max_image_seq_len) - math.log2(base_image_seq_len))
+    factor = max(min(factor, 1.0), 0.0)
+    mu = base_shift + factor * (max_shift - base_shift)
 
     return mu
 
@@ -143,6 +146,7 @@ class SD3TextEncodersLoader(NodeBase, NodeQuantization):
 
 class SD3PromptEncoder(NodeBase):
     def execute(self, text_encoders, prompt, prompt_2, prompt_3, prompt_scale, prompt_scale_2, prompt_scale_3):
+        """
         model_id = text_encoders['model_id']
 
         pipe = StableDiffusion3Pipeline.from_pretrained(
@@ -159,9 +163,13 @@ class SD3PromptEncoder(NodeBase):
             tokenizer_3=text_encoders['t5_tokenizer'],
         )
 
-        return { 'embeds': self.encode_prompt(pipe, text_encoders, prompt, prompt_2, prompt_3, prompt_scale, prompt_scale_2, prompt_scale_3) }
+        device = text_encoders['device']
+        get_clip_prompt_embeds(prompt, text_encoders['tokenizer'], self.mm_get(text_encoders['text_encoder']), device=device)
+        """
+
+        return { 'embeds': self.encode_prompt(text_encoders, prompt, prompt_2, prompt_3, prompt_scale, prompt_scale_2, prompt_scale_3) }
     
-    def encode_prompt(self, pipe, text_encoders, prompt="", prompt_2="", prompt_3="", prompt_scale=1.0, prompt_scale_2=1.0, prompt_scale_3=1.0):
+    def encode_prompt(self, text_encoders, prompt="", prompt_2="", prompt_3="", prompt_scale=1.0, prompt_scale_2=1.0, prompt_scale_3=1.0, max_sequence_length=256):
         device = text_encoders['device']
 
         prompt = prompt or ""
@@ -173,51 +181,33 @@ class SD3PromptEncoder(NodeBase):
         prompt_3 = [prompt_3] if isinstance(prompt_3, str) else prompt_3
 
         with torch.inference_mode():
-            self.mm_load(text_encoders['text_encoder'], device)
-            prompt_embed, pooled_prompt_embed = pipe._get_clip_prompt_embeds(
-                prompt=prompt,
-                device=device,
-                num_images_per_prompt=1,
-                clip_skip=None,
-                clip_model_index=0,
-            )
+            encoder = self.mm_load(text_encoders['text_encoder'], device)
+            prompt_embed, pooled_prompt_embed = get_clip_prompt_embeds(prompt, text_encoders['tokenizer'], encoder)
             if prompt_scale != 1.0:
                 prompt_embed = prompt_embed * prompt_scale
                 pooled_prompt_embed = pooled_prompt_embed * prompt_scale
 
-            self.mm_load(text_encoders['text_encoder_2'], device)
-            prompt_2_embed, pooled_prompt_2_embed = pipe._get_clip_prompt_embeds(
-                prompt=prompt_2,
-                device=device,
-                num_images_per_prompt=1,
-                clip_skip=None,
-                clip_model_index=1,
-            )
+            encoder_2 = self.mm_load(text_encoders['text_encoder_2'], device)
+            prompt_2_embed, pooled_prompt_2_embed = get_clip_prompt_embeds(prompt_2, text_encoders['tokenizer_2'], encoder_2)
             if prompt_scale_2 != 1.0:
                 prompt_2_embed = prompt_2_embed * prompt_scale_2
                 pooled_prompt_2_embed = pooled_prompt_2_embed * prompt_scale_2
 
+            clip_prompt_embeds = torch.cat([prompt_embed, prompt_2_embed], dim=-1)
+
             t5_prompt_embed = None
             if text_encoders['t5_encoder']:
-                self.mm_load(text_encoders['t5_encoder'], device)
-                t5_prompt_embed = pipe._get_t5_prompt_embeds(
-                    prompt=prompt_3,
-                    device=device,
-                    num_images_per_prompt=1,
-                    max_sequence_length=256,
-                )
+                encoder_3 = self.mm_load(text_encoders['t5_encoder'], device)
+                t5_prompt_embed = get_t5_prompt_embeds(prompt_3, text_encoders['t5_tokenizer'], encoder_3)
                 if prompt_scale_3 != 1.0:
                     t5_prompt_embed = t5_prompt_embed * prompt_scale_3
             else:
-                t5_prompt_embed = torch.zeros((prompt_embed.shape[0], 256, 4096), device=device, dtype=prompt_embed.dtype)
-
-        clip_prompt_embeds = torch.cat([prompt_embed, prompt_2_embed], dim=-1)
+                t5_prompt_embed = torch.zeros((prompt_embed.shape[0], max_sequence_length, 4096), device=device, dtype=prompt_embed.dtype)
 
         clip_prompt_embeds = torch.nn.functional.pad(
             clip_prompt_embeds, (0, t5_prompt_embed.shape[-1] - clip_prompt_embeds.shape[-1])
         )
         prompt_embeds = torch.cat([clip_prompt_embeds, t5_prompt_embed], dim=-2).to('cpu')
-
         pooled_prompt_embeds = torch.cat([pooled_prompt_embed, pooled_prompt_2_embed], dim=-1).to('cpu')
 
         del prompt_embed, pooled_prompt_embed, prompt_2_embed, pooled_prompt_2_embed, t5_prompt_embed
@@ -361,6 +351,16 @@ class SD3Sampler(NodeBase):
 
         if not negative:
             negative = { 'prompt_embeds': torch.zeros_like(positive['prompt_embeds']), 'pooled_prompt_embeds': torch.zeros_like(positive['pooled_prompt_embeds']) }
+        
+        def pad_prompt_embeds(source, target):
+            pad_length = target['prompt_embeds'].shape[1] - source['prompt_embeds'].shape[1]
+            source['prompt_embeds'] = torch.nn.functional.pad(source['prompt_embeds'], (0, 0, 0, pad_length))
+            return source
+
+        if positive['prompt_embeds'].shape[1] > negative['prompt_embeds'].shape[1]:
+            negative = pad_prompt_embeds(negative, positive)
+        elif positive['prompt_embeds'].shape[1] < negative['prompt_embeds'].shape[1]:
+            positive = pad_prompt_embeds(positive, negative)
 
         # 4. Run the pipeline
         with torch.inference_mode():

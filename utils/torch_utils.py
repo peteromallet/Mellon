@@ -1,5 +1,4 @@
 import torch
-from torchvision.transforms import v2 as tt
 
 def list_devices():
     host = ""  # TODO: support multiple hosts
@@ -64,7 +63,9 @@ def str_to_dtype(dtype, params):
     }[dtype]
 
 def toTensor(image):
+    from torchvision.transforms import v2 as tt
     return tt.PILToTensor()(image) / 255.0
 
 def toPIL(tensor):
+    from torchvision.transforms import v2 as tt
     return tt.ToPILImage()(tensor.clamp(0, 1).float())

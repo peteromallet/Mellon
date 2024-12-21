@@ -278,6 +278,7 @@ MODULE_MAP = {
                 'type': 'int',
                 'default': 0,
                 'min': 0,
+                'display': 'random',
                 #'max': (1<<53)-1, # max JS integer
             },
             'steps': {
@@ -377,47 +378,3 @@ quantization_params = {
 
 MODULE_MAP['SD3TransformerLoader']['params'].update(quantization_params)
 MODULE_MAP['SD3TextEncodersLoader']['params'].update(quantization_params)
-"""
-MODULE_MAP['SD3TextEncodersLoader']['params'].update({
-    'quanto_apply_clip_l': {
-        'label': 'Apply to CLIP L',
-        'type': 'boolean',
-        'display': 'checkbox',
-        'default': False,
-        'group': 'quanto'
-    },
-    'quanto_apply_clip_g': {
-        'label': 'Apply to CLIP G',
-        'type': 'boolean',
-        'display': 'checkbox',
-        'default': False,
-        'group': 'quanto'
-    },
-    'quanto_apply_t5': {
-        'label': 'Apply to T5',
-        'type': 'boolean',
-        'display': 'checkbox',
-        'default': True,
-        'group': 'quanto'
-    },
-})
-MODULE_MAP['SD3UnifiedLoader']['params'].update(quantization_params)
-MODULE_MAP['SD3UnifiedLoader']['params'].update({
-    'apply_to_transformer': {
-        'label': 'Apply to Transformer',
-        'type': 'boolean',
-        'display': 'checkbox',
-        'default': True,
-        'group': 'quanto',
-        'hidden': True,
-    },
-    'apply_to_t5': {
-        'label': 'Apply to T5',
-        'type': 'boolean',
-        'display': 'checkbox',
-        'default': True,
-        'group': 'quanto',
-        'hidden': True,
-    },
-})
-"""

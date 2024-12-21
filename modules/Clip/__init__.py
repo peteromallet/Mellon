@@ -1,5 +1,4 @@
 from utils.torch_utils import device_list, default_device
-import torch
 
 MODULE_MAP = {
     'CLIPTextEncoderLoader': {
