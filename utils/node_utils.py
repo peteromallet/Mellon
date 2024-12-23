@@ -1,7 +1,10 @@
+import logging
+logger = logging.getLogger('mellon')
 from modules import MODULE_MAP
 import torch
 import time
 from utils.memory_manager import memory_flush, memory_manager
+from mellon.server import web_server
 import nanoid
 import random
 
@@ -68,10 +71,14 @@ class NodeBase():
         self.params = {}
         self.output = get_module_output(self.module_name, self.class_name)
         
+        self._client_id = None
+        self._pipe_interrupt = False
         self._mm_model_ids = []
         self._execution_time = 0
 
     def __call__(self, **kwargs):
+        self._pipe_interrupt = False
+
         # if the node_id is not set, the class was called by the user and it's not part of a workflow,
         # we execute the method directly
         if not self.node_id:
@@ -190,6 +197,29 @@ class NodeBase():
             are_different(self.params.get(key), values.get(key))
             for key in values
         )
+    
+    def pipe_callback(self, pipe, step_index, timestep, kwargs):
+        import asyncio
+        if self.node_id:
+            try:
+                progress = int((step_index + 1) / pipe._num_inference_steps * 100)
+                asyncio.run_coroutine_threadsafe(
+                    web_server.progress_queue.put({
+                        "type": "progress",
+                        "nodeId": self.node_id,
+                        "progress": progress,
+                        "client_id": self._client_id
+                    }), 
+                    web_server.event_loop
+                )
+            except Exception as e:
+                logger.warning(f"Error queuing progress update: {str(e)}")
+
+            # interrupt callback
+            if self._pipe_interrupt:
+                pipe._interrupt = True
+
+        return kwargs
     
     def mm_add(self, model, model_id=None, device=None, priority=2):
         # if the node_id is not set, the class was called directly and we skip the memory manager

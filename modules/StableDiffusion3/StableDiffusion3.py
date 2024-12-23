@@ -9,6 +9,7 @@ from utils.diffusers_utils import get_clip_prompt_embeds, get_t5_prompt_embeds
 from config import config
 from mellon.quantization import NodeQuantization
 import math
+import asyncio
 
 HF_TOKEN = config.hf['token']
 
@@ -146,27 +147,6 @@ class SD3TextEncodersLoader(NodeBase, NodeQuantization):
 
 class SD3PromptEncoder(NodeBase):
     def execute(self, text_encoders, prompt, prompt_2, prompt_3, prompt_scale, prompt_scale_2, prompt_scale_3):
-        """
-        model_id = text_encoders['model_id']
-
-        pipe = StableDiffusion3Pipeline.from_pretrained(
-            model_id,
-            local_files_only=True,
-            transformer=None,
-            vae=None,
-            scheduler=None,
-            text_encoder=self.mm_get(text_encoders['text_encoder']),
-            text_encoder_2=self.mm_get(text_encoders['text_encoder_2']),
-            text_encoder_3=self.mm_get(text_encoders['t5_encoder']),
-            tokenizer=text_encoders['tokenizer'],
-            tokenizer_2=text_encoders['tokenizer_2'],
-            tokenizer_3=text_encoders['t5_tokenizer'],
-        )
-
-        device = text_encoders['device']
-        get_clip_prompt_embeds(prompt, text_encoders['tokenizer'], self.mm_get(text_encoders['text_encoder']), device=device)
-        """
-
         return { 'embeds': self.encode_prompt(text_encoders, prompt, prompt_2, prompt_3, prompt_scale, prompt_scale_2, prompt_scale_3) }
     
     def encode_prompt(self, text_encoders, prompt="", prompt_2="", prompt_3="", prompt_scale=1.0, prompt_scale_2=1.0, prompt_scale_3=1.0, max_sequence_length=256):
@@ -181,61 +161,50 @@ class SD3PromptEncoder(NodeBase):
         prompt_3 = [prompt_3] if isinstance(prompt_3, str) else prompt_3
 
         with torch.inference_mode():
+            # 1. Get the embeds from the first text encoder
             encoder = self.mm_load(text_encoders['text_encoder'], device)
             prompt_embed, pooled_prompt_embed = get_clip_prompt_embeds(prompt, text_encoders['tokenizer'], encoder)
             if prompt_scale != 1.0:
                 prompt_embed = prompt_embed * prompt_scale
                 pooled_prompt_embed = pooled_prompt_embed * prompt_scale
 
+            # 2. Get the embeds from the second text encoder
             encoder_2 = self.mm_load(text_encoders['text_encoder_2'], device)
             prompt_2_embed, pooled_prompt_2_embed = get_clip_prompt_embeds(prompt_2, text_encoders['tokenizer_2'], encoder_2)
             if prompt_scale_2 != 1.0:
                 prompt_2_embed = prompt_2_embed * prompt_scale_2
                 pooled_prompt_2_embed = pooled_prompt_2_embed * prompt_scale_2
 
+            # 3. Get the concatenated clip embedings
             clip_prompt_embeds = torch.cat([prompt_embed, prompt_2_embed], dim=-1)
+            pooled_prompt_embeds = torch.cat([pooled_prompt_embed, pooled_prompt_2_embed], dim=-1).to('cpu')
+            del prompt_embed, pooled_prompt_embed, prompt_2_embed, pooled_prompt_2_embed
+            memory_flush()
 
-            t5_prompt_embed = None
+            # 4. Get the T5 embedings
             if text_encoders['t5_encoder']:
                 encoder_3 = self.mm_load(text_encoders['t5_encoder'], device)
-                t5_prompt_embed = get_t5_prompt_embeds(prompt_3, text_encoders['t5_tokenizer'], encoder_3)
+                t5_prompt_embeds = get_t5_prompt_embeds(prompt_3, text_encoders['t5_tokenizer'], encoder_3)
                 if prompt_scale_3 != 1.0:
-                    t5_prompt_embed = t5_prompt_embed * prompt_scale_3
+                    t5_prompt_embeds = t5_prompt_embeds * prompt_scale_3
             else:
-                t5_prompt_embed = torch.zeros((prompt_embed.shape[0], max_sequence_length, 4096), device=device, dtype=prompt_embed.dtype)
+                t5_prompt_embeds = torch.zeros((clip_prompt_embeds.shape[0], max_sequence_length, 4096), device=device, dtype=clip_prompt_embeds.dtype)
 
+        # 5. Merge the clip and T5 embedings
         clip_prompt_embeds = torch.nn.functional.pad(
-            clip_prompt_embeds, (0, t5_prompt_embed.shape[-1] - clip_prompt_embeds.shape[-1])
+            clip_prompt_embeds, (0, t5_prompt_embeds.shape[-1] - clip_prompt_embeds.shape[-1])
         )
-        prompt_embeds = torch.cat([clip_prompt_embeds, t5_prompt_embed], dim=-2).to('cpu')
-        pooled_prompt_embeds = torch.cat([pooled_prompt_embed, pooled_prompt_2_embed], dim=-1).to('cpu')
+        prompt_embeds = torch.cat([clip_prompt_embeds, t5_prompt_embeds], dim=-2).to('cpu')
 
-        del prompt_embed, pooled_prompt_embed, prompt_2_embed, pooled_prompt_2_embed, t5_prompt_embed
-        memory_flush()
+        del clip_prompt_embeds, t5_prompt_embeds # help the garbage collector?
 
         return { 'prompt_embeds': prompt_embeds, 'pooled_prompt_embeds': pooled_prompt_embeds }
 
 class SD3SimplePromptEncoder(SD3PromptEncoder):
     def execute(self, text_encoders, prompt, negative_prompt):
-        model_id = text_encoders['model_id']
-
-        pipe = StableDiffusion3Pipeline.from_pretrained(
-            model_id,
-            local_files_only=True,
-            transformer=None,
-            vae=None,
-            scheduler=None,
-            text_encoder=self.mm_get(text_encoders['text_encoder']),
-            text_encoder_2=self.mm_get(text_encoders['text_encoder_2']),
-            text_encoder_3=self.mm_get(text_encoders['t5_encoder']),
-            tokenizer=text_encoders['tokenizer'],
-            tokenizer_2=text_encoders['tokenizer_2'],
-            tokenizer_3=text_encoders['t5_tokenizer'],
-        )
-
         return { 'embeds': {
-            'positive_embeds': self.encode_prompt(pipe, text_encoders, prompt),
-            'negative_embeds': self.encode_prompt(pipe, text_encoders, negative_prompt),
+            'positive_embeds': self.encode_prompt(text_encoders, prompt),
+            'negative_embeds': self.encode_prompt(text_encoders, negative_prompt),
         }}
 
 class SD3Sampler(NodeBase):
@@ -268,7 +237,7 @@ class SD3Sampler(NodeBase):
                 'shift': 3.0,
             }
         }
-
+        
     def execute(self,
                 transformer,
                 prompt,
@@ -304,6 +273,7 @@ class SD3Sampler(NodeBase):
             vae=vae,
             local_files_only=True,
         )
+        pipe._num_inference_steps = steps
 
         # 2. Create the scheduler
         if scheduler == 'FlowMatchHeunDiscreteScheduler':
@@ -378,6 +348,7 @@ class SD3Sampler(NodeBase):
                         guidance_scale=cfg,
                         num_inference_steps=steps,
                         output_type="latent",
+                        callback_on_step_end=self.pipe_callback,
                         mu=mu,
                     ).images
                     break

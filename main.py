@@ -24,8 +24,8 @@ if config.hf['cache_dir']:
 from modules import MODULE_MAP
 
 # start web server
-from mellon.server import WebServer
-web_server = WebServer(MODULE_MAP, **config.server)
+from mellon.server import web_server #WebServer
+#web_server = WebServer(MODULE_MAP, **config.server)
 
 # welcome message
 logger.info(f"""\x1b[33;20m
@@ -36,3 +36,4 @@ Speak Friend and Enter: http://{config.server['host']}:{config.server['port']}""
 
 # Engage!
 web_server.run()
+

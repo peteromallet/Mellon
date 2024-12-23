@@ -23,6 +23,10 @@ class WebServer:
         self.port = port
         self.ws_clients = {}
         self.app = web.Application()
+        self.event_loop = None
+
+        self.progress_queue = asyncio.Queue()
+        self.progress_task = None
 
         self.app.add_routes([web.get('/', self.index),
                              web.get('/nodes', self.nodes),
@@ -49,12 +53,14 @@ class WebServer:
     def run(self):
         # TODO: need to do proper queue processing
         async def start_app():
+            self.event_loop = asyncio.get_event_loop()
             runner = web.AppRunner(self.app, client_max_size=1024**4)
             await runner.setup()
             site = web.TCPSite(runner, self.host, self.port)
             
             # Start queue processor
             self.queue_task = asyncio.create_task(self.process_queue())
+            self.progress_task = asyncio.create_task(self.process_progress())
             
             await site.start()
             
@@ -64,24 +70,39 @@ class WebServer:
                 # Cleanup
                 if self.queue_task:
                     self.queue_task.cancel()
-                    try:
-                        await self.queue_task
-                    except asyncio.CancelledError:
-                        pass
+                if self.progress_task:
+                    self.progress_task.cancel()
                 await runner.cleanup()
         
         asyncio.run(start_app())
 
+    async def process_progress(self):
+        while True:
+            item = await self.progress_queue.get()
+            try:
+                await self.ws_clients[item["client_id"]].send_json({
+                    "type": "progress",
+                    "nodeId": item["nodeId"],
+                    "progress": item["progress"]
+                })
+                #await asyncio.sleep(0.02)
+            except Exception as e:
+                logger.error(f"Error sending progress update: {str(e)}")
+            finally:
+                self.progress_queue.task_done()
+
     async def process_queue(self):
         while True:
-            graph = await self.queue.get()
-            
+            item = await self.queue.get()
             try:
-                await self.graph_execution(graph)
+                await self.graph_execution(item)
             except Exception as e:
                 logger.error(f"Error processing queue task: {str(e)}")
-                # display line number and file where the error occurred
                 logger.error(f"Error occurred in {traceback.format_exc()}")
+                await self.broadcast({
+                    "type": "error",
+                    "error": "An unexpected error occurred while processing the graph"
+                })
             finally:
                 self.queue.task_done()
 
@@ -225,12 +246,25 @@ class WebServer:
                 # if the node is not in the node store, initialize it
                 if node not in self.node_store:
                     self.node_store[node] = action(node)
+                
+                self.node_store[node]._client_id = sid
 
                 if not callable(self.node_store[node]):
                     raise TypeError(f"The class `{module_name}.{action_name}` is not callable. Ensure that the class has a __call__ method or extend it from `NodeBase`.")
                 
-                # execute the node
-                self.node_store[node](**args)
+                # initialize the progress bar
+                await self.ws_clients[sid].send_json({
+                    "type": "progress",
+                    "nodeId": node,
+                    "progress": -1
+                })
+
+                try:
+                    await self.event_loop.run_in_executor(None, lambda: self.node_store[node](**args))
+                    #self.node_store[node](**args)
+                except Exception as e:
+                    logger.error(f"Error executing node {module_name}.{action_name}: {str(e)}")
+                    raise e
                 
                 execution_time = self.node_store[node]._execution_time if hasattr(self.node_store[node], '_execution_time') else 0
 
@@ -335,9 +369,17 @@ class WebServer:
             
         return ws
     
-    async def broadcast(self, message):
-        for client in self.ws_clients:
-            await client.send_json(message)
+    async def broadcast(self, message, client_id=None):
+        if client_id:
+            if client_id not in self.ws_clients:
+                return
+            ws_clients = [client_id] if not isinstance(client_id, list) else client_id
+        else:
+            ws_clients = self.ws_clients
+
+        for client in ws_clients:
+            await self.ws_clients[client].send_json(message)
+
     
     """
     Helper functions
@@ -357,3 +399,7 @@ class WebServer:
     def slugify(self, text):
         return re.sub(r'[^\w\s-]', '', text).strip().replace(' ', '-')
 
+from modules import MODULE_MAP
+from config import config
+
+web_server = WebServer(MODULE_MAP, **config.server)

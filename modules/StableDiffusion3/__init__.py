@@ -279,7 +279,6 @@ MODULE_MAP = {
                 'default': 0,
                 'min': 0,
                 'display': 'random',
-                #'max': (1<<53)-1, # max JS integer
             },
             'steps': {
                 'label': 'Steps',
