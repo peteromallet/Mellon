@@ -273,7 +273,6 @@ class SD3Sampler(NodeBase):
             vae=vae,
             local_files_only=True,
         )
-        pipe._num_inference_steps = steps
 
         # 2. Create the scheduler
         if scheduler == 'FlowMatchHeunDiscreteScheduler':

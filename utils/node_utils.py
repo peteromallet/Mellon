@@ -202,7 +202,7 @@ class NodeBase():
         import asyncio
         if self.node_id:
             try:
-                progress = int((step_index + 1) / pipe._num_inference_steps * 100)
+                progress = int((step_index + 1) / len(pipe.scheduler.timesteps) * 100)
                 asyncio.run_coroutine_threadsafe(
                     web_server.progress_queue.put({
                         "type": "progress",
