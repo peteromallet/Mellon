@@ -64,8 +64,18 @@ def str_to_dtype(dtype, params):
 
 def toTensor(image):
     from torchvision.transforms import v2 as tt
-    return tt.PILToTensor()(image) / 255.0
+    image = tt.PILToTensor()(image) / 255.0
+    return image
 
 def toPIL(tensor):
     from torchvision.transforms import v2 as tt
     return tt.ToPILImage()(tensor.clamp(0, 1).float())
+
+def toLatent(image):
+    from torchvision.transforms import v2 as tt
+    image = image.convert('RGB')
+    image = tt.PILToTensor()(image) / 127.5 - 1
+    if len(image.shape) == 3:
+        image = image.unsqueeze(0)
+
+    return image

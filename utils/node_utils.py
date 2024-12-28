@@ -202,7 +202,7 @@ class NodeBase():
         import asyncio
         if self.node_id:
             try:
-                progress = int((step_index + 1) / len(pipe.scheduler.timesteps) * 100)
+                progress = int((step_index + 1) / pipe._num_timesteps * 100)
                 asyncio.run_coroutine_threadsafe(
                     web_server.progress_queue.put({
                         "type": "progress",
@@ -248,6 +248,17 @@ class NodeBase():
 
     def mm_update(self, model_id, model=None, priority=None, unload=True):
         return memory_manager.update_model(model_id, model=model, priority=priority, unload=unload) if model_id else None
+    
+    def mm_try(self, func, device, exclude=None):
+        while True:
+            try:
+                with torch.inference_mode():
+                    return func()
+            except torch.OutOfMemoryError as e:
+                if memory_manager.unload_next(device, exclude=exclude):
+                    continue
+                else:
+                    raise e
     
     def mm_flash_load(self, model, model_id=None, device='cpu', priority=3):
         model_id = f'{self.node_id}.{model_id}' if model_id else f'{self.node_id}.{nanoid.generate(size=8)}'

@@ -62,6 +62,17 @@ class SaveImage(NodeBase):
 
         return
 
+class ResizeToDivisible(NodeBase):
+    def execute(self, images, divisible_by):
+        from PIL.ImageOps import fit
+        divisible_by = int(max(1, divisible_by))
+        width, height = images.size
+        width = width // divisible_by * divisible_by
+        height = height // divisible_by * divisible_by
+        images = fit(images, (width, height), Image.Resampling.LANCZOS)
+        return { 'images_out': images,
+                 'width': width,
+                 'height': height }
 
 # NOT implemented
 class BlendImages(NodeBase):

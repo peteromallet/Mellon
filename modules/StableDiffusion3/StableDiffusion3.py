@@ -1,15 +1,15 @@
 import logging
 logger = logging.getLogger('mellon')
 import torch
-from diffusers import SD3Transformer2DModel, AutoencoderKL, StableDiffusion3Pipeline
+from diffusers import SD3Transformer2DModel, AutoencoderKL, StableDiffusion3Pipeline, StableDiffusion3Img2ImgPipeline
 from utils.node_utils import NodeBase
-from utils.memory_manager import memory_flush, memory_manager
+from utils.memory_manager import memory_flush
 from utils.hf_utils import is_local_files_only, get_repo_path
 from utils.diffusers_utils import get_clip_prompt_embeds, get_t5_prompt_embeds
 from config import config
 from mellon.quantization import NodeQuantization
 import math
-import asyncio
+
 
 HF_TOKEN = config.hf['token']
 
@@ -249,32 +249,11 @@ class SD3Sampler(NodeBase):
                 height,
                 steps,
                 cfg,
+                denoise,
                 shift,
                 use_dynamic_shifting):
-        
-        # 1. Prepare the pipeline
-        device = transformer['device']
-        transformer_model = self.mm_load(transformer['transformer'], device)
-        model_id = transformer['model_id']
-        generator = torch.Generator(device=device).manual_seed(seed)
 
-        vae = self.mm_flash_load(self.dummy_vae, device=device)
-
-        pipe = StableDiffusion3Pipeline.from_pretrained(
-            model_id,
-            transformer=transformer_model,
-            text_encoder=None,
-            text_encoder_2=None,
-            text_encoder_3=None,
-            tokenizer=None,
-            tokenizer_2=None,
-            tokenizer_3=None,
-            scheduler=None,
-            vae=vae,
-            local_files_only=True,
-        )
-
-        # 2. Create the scheduler
+        # 1. Create the scheduler
         if scheduler == 'FlowMatchHeunDiscreteScheduler':
             from diffusers import FlowMatchHeunDiscreteScheduler as SchedulerCls
             use_dynamic_shifting = False # not supported by Heun
@@ -285,13 +264,37 @@ class SD3Sampler(NodeBase):
         mu = None
         if use_dynamic_shifting:
             mu = calculate_mu(width, height,
-                            patch_size=transformer_model.config.patch_size,
+                            patch_size=2,
                             base_image_seq_len=scheduler_config['base_image_seq_len'],
                             max_image_seq_len=scheduler_config['max_image_seq_len'],
                             base_shift=scheduler_config['base_shift'],
                             max_shift=scheduler_config['max_shift'])
 
-        pipe.scheduler = SchedulerCls.from_config(scheduler_config, shift=shift, use_dynamic_shifting=use_dynamic_shifting)
+        pipe_scheduler = SchedulerCls.from_config(scheduler_config, shift=shift, use_dynamic_shifting=use_dynamic_shifting)
+
+        # 2. Prepare the pipeline
+        device = transformer['device']
+        transformer_model = self.mm_load(transformer['transformer'], device)
+        model_id = transformer['model_id']
+        generator = torch.Generator(device=device).manual_seed(seed)
+
+        vae = self.mm_flash_load(self.dummy_vae, device=device)
+
+        pipelineCls = StableDiffusion3Pipeline if latents_in is None else StableDiffusion3Img2ImgPipeline
+
+        pipe = pipelineCls.from_pretrained(
+            model_id,
+            transformer=transformer_model,
+            text_encoder=None,
+            text_encoder_2=None,
+            text_encoder_3=None,
+            tokenizer=None,
+            tokenizer_2=None,
+            tokenizer_3=None,
+            scheduler=pipe_scheduler,
+            vae=vae,
+            local_files_only=True,
+        )
 
         """
         batch_size = positive['prompt_embeds'].shape[0]
@@ -331,33 +334,34 @@ class SD3Sampler(NodeBase):
         elif positive['prompt_embeds'].shape[1] < negative['prompt_embeds'].shape[1]:
             positive = pad_prompt_embeds(positive, negative)
 
+        pipe_config = {
+            'generator': generator,
+            'prompt_embeds': positive['prompt_embeds'].to(device, dtype=transformer_model.dtype),
+            'pooled_prompt_embeds': positive['pooled_prompt_embeds'].to(device, dtype=transformer_model.dtype),
+            'negative_prompt_embeds': negative['prompt_embeds'].to(device, dtype=transformer_model.dtype),
+            'negative_pooled_prompt_embeds': negative['pooled_prompt_embeds'].to(device, dtype=transformer_model.dtype),
+            'width': width,
+            'height': height,
+            'guidance_scale': cfg,
+            'num_inference_steps': steps,
+            'output_type': "latent",
+            'callback_on_step_end': self.pipe_callback,
+            'mu': mu,
+        }
+
+        if latents_in is not None:
+            #pipe.image_processor.preprocess = lambda image, **kwargs: image
+            pipe_config['width'] = None
+            pipe_config['height'] = None
+            pipe_config['image'] = latents_in
+            pipe_config['strength'] = denoise
+
         # 4. Run the pipeline
-        with torch.inference_mode():
-            while True:
-                try:
-                    latents = pipe(
-                        generator=generator,
-                        prompt_embeds=positive['prompt_embeds'].to(device, dtype=transformer_model.dtype),
-                        pooled_prompt_embeds=positive['pooled_prompt_embeds'].to(device, dtype=transformer_model.dtype),
-                        negative_prompt_embeds=negative['prompt_embeds'].to(device, dtype=transformer_model.dtype),
-                        negative_pooled_prompt_embeds=negative['pooled_prompt_embeds'].to(device, dtype=transformer_model.dtype),
-                        #latents=latents,
-                        width=width,
-                        height=height,
-                        guidance_scale=cfg,
-                        num_inference_steps=steps,
-                        output_type="latent",
-                        callback_on_step_end=self.pipe_callback,
-                        mu=mu,
-                    ).images
-                    break
-                except torch.OutOfMemoryError as e:
-                    if memory_manager.unload_next(device, exclude=transformer['transformer']):
-                        continue
-                    else:
-                        raise e
-                except Exception as e:
-                    raise e
+        latents = self.mm_try(
+            lambda: pipe(**pipe_config).images,
+            device,
+            exclude=transformer['transformer']
+        )
 
         latents = latents.to('cpu')
 

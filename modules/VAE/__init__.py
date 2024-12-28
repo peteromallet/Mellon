@@ -26,4 +26,58 @@ MODULE_MAP = {
             },
         },
     },
+    'VAEEncode': {
+        'label': 'VAE Encode',
+        'description': 'Encode an image into a latent space',
+        'category': 'vae',
+        'style': {
+            'maxWidth': 300,
+        },
+        'params': {
+            'model': {
+                'label': 'VAE',
+                'type': 'vae',
+                'display': 'input',
+            },
+            'images': {
+                'label': 'Images',
+                'type': 'image',
+                'display': 'input',
+            },
+            'latents': {
+                'label': 'Latents',
+                'type': 'latent',
+                'display': 'output',
+            },
+            'divisible_by': {
+                'label': 'Divisible By',
+                'type': 'int',
+                'default': 8,
+                'display': 'slider',
+                'min': 1,
+            },
+        },
+    },
+    'VAEDecode': {
+        'label': 'VAE Decode',
+        'description': 'Decode a latent space into an image',
+        'category': 'vae',
+        'params': {
+            'model': {
+                'label': 'VAE',
+                'type': 'vae',
+                'display': 'input',
+            },
+            'latents': {
+                'label': 'Latents',
+                'type': 'latent',
+                'display': 'input',
+            },
+            'images': {
+                'label': 'Images',
+                'type': 'image',
+                'display': 'output',
+            },
+        },
+    },
 }

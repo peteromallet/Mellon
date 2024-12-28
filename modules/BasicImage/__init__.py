@@ -69,6 +69,43 @@ MODULE_MAP = {
         },
     },
 
+    'ResizeToDivisible': {
+        'label': 'Resize to Divisible',
+        'description': 'Resize an image to be divisible by a given number',
+        'category': 'image',
+        'style': {
+            'maxWidth': 300,
+        },
+        'params': {
+            'images': {
+                'label': 'Images',
+                'display': 'input',
+                'type': 'image',
+            },
+            'images_out': {
+                'label': 'Images',
+                'display': 'output',
+                'type': 'image',
+            },
+            'width': {
+                'label': 'Width',
+                'display': 'output',
+                'type': 'int',
+            },
+            'height': {
+                'label': 'Height',
+                'display': 'output',
+                'type': 'int',
+            },
+            'divisible_by': {
+                'label': 'Divisible By',
+                'type': 'int',
+                'default': 8,
+                'min': 1
+            },
+        },
+    },
+
     'BlendImages': {
         'label': 'Blend Images',
         'description': 'Blend two images',

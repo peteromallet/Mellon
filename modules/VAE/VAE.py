@@ -1,8 +1,8 @@
 import torch
 from diffusers import AutoencoderKL
 from utils.node_utils import NodeBase
-#from utils.memory_manager import memory_flush, memory_manager
 from utils.hf_utils import is_local_files_only
+from utils.torch_utils import toPIL, toLatent
 
 class LoadVAE(NodeBase):
     #is_compiled = False
@@ -38,3 +38,54 @@ class LoadVAE(NodeBase):
         """
 
         return { 'model': { 'vae': vae, 'device': device } }
+
+class VAEEncode(NodeBase):
+    def execute(self, model, images, divisible_by):
+        device = model['device']
+        model_id = model['vae'] if 'vae' in model else model['model']
+
+        if divisible_by > 1:
+            from modules.BasicImage.BasicImage import ResizeToDivisible
+            images = ResizeToDivisible()(images=images, divisible_by=divisible_by)['images_out']
+        
+        latents = self.mm_try(
+            lambda: self.encode(model_id, images, device),
+            device,
+            exclude=model_id
+        )
+
+        return { 'latents': latents }
+    
+    def encode(self, model_id, images, device):
+        model = self.mm_get(model_id)
+        model = model.to(device)
+        images = toLatent(images).to(model.device, dtype=model.dtype)
+
+        latents = model.encode(images).latent_dist.sample()
+        latents = latents * model.config.scaling_factor
+        latents = latents.to('cpu')
+        del images, model
+        return latents
+
+class VAEDecode(NodeBase):
+    def execute(self, model, latents):
+        device = model['device']
+        model_id = model['vae'] if 'vae' in model else model['model']
+
+        images = self.mm_try(
+            lambda: self.decode(model_id, latents, device),
+            device,
+            exclude=model_id
+        )
+
+        return { 'images': images }
+    
+    def decode(self, model_id, latents, device):
+        model = self.mm_get(model_id)
+        model = model.to(device)
+        latents = 1 / model.config['scaling_factor'] * latents
+        images = model.decode(latents.to(model.device, dtype=model.dtype), return_dict=False)[0][0]
+        del latents, model
+        images = images / 2 + 0.5
+        images = toPIL(images.to('cpu'))
+        return images

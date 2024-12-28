@@ -228,7 +228,8 @@ MODULE_MAP = {
             'latents_in': {
                 'label': 'Latents',
                 'display': 'input',
-                'type': 'latents',
+                'type': 'latent',
+                'onChange': { 'action': 'disable', 'target': { 'connected': ['dimensions_group'], 'disconnected': ['denoise'] } },
             },
             'latents': {
                 'label': 'Latents',
@@ -293,6 +294,15 @@ MODULE_MAP = {
                 'default': 5,
                 'min': 0,
                 'max': 100,
+            },
+            'denoise': {
+                'label': 'Denoise',
+                'type': 'float',
+                'default': 1.0,
+                'min': 0,
+                'max': 1,
+                'display': 'slider',
+                'step': 0.05,
             },
             'scheduler': {
                 'label': 'Scheduler',
