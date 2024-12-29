@@ -218,12 +218,12 @@ MODULE_MAP = {
             'prompt': {
                 'label': 'Prompt',
                 'display': 'input',
-                'type': 'SD3Embeddings',
+                'type': ['SD3Embeddings', 'embeddings'],
             },
             'negative_prompt': {
                 'label': 'Negative prompt',
                 'display': 'input',
-                'type': 'SD3Embeddings',
+                'type': ['SD3Embeddings', 'embeddings'],
             },
             'latents_in': {
                 'label': 'Latents',

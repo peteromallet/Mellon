@@ -48,14 +48,14 @@ for module, actions in MODULE_MAP.items():
             field['group'] = f"random-{param}"
             field['display'] = "number"
 
-            if 'onAfterNodeExecute' not in data:
-                data['onAfterNodeExecute'] = []
-            elif not isinstance(data['onAfterNodeExecute'], list):
-                data['onAfterNodeExecute'] = [data['onAfterNodeExecute']]
+            # if 'onAfterNodeExecute' not in data:
+            #     data['onAfterNodeExecute'] = []
+            # elif not isinstance(data['onAfterNodeExecute'], list):
+            #     data['onAfterNodeExecute'] = [data['onAfterNodeExecute']]
 
-            data['onAfterNodeExecute'].append({
-                'action': 'updateValue',
-                'target': param
-            })
+            # data['onAfterNodeExecute'].append({
+            #     'action': 'updateValue',
+            #     'target': param
+            # })
 
             data['params'].update(create_random_field(param))

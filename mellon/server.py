@@ -12,6 +12,7 @@ import asyncio
 import traceback
 from utils.memory_manager import memory_flush
 from copy import deepcopy
+import random
 
 class WebServer:
     def __init__(self, module_map: dict, host: str = "0.0.0.0", port: int = 8080, cors: bool = False, cors_route: str = "*"):
@@ -25,8 +26,8 @@ class WebServer:
         self.app = web.Application()
         self.event_loop = None
 
-        self.progress_queue = asyncio.Queue()
-        self.progress_task = None
+        self.client_queue = asyncio.Queue()
+        self.client_task = None
 
         self.app.add_routes([web.get('/', self.index),
                              web.get('/nodes', self.nodes),
@@ -60,7 +61,7 @@ class WebServer:
             
             # Start queue processor
             self.queue_task = asyncio.create_task(self.process_queue())
-            self.progress_task = asyncio.create_task(self.process_progress())
+            self.client_task = asyncio.create_task(self.process_client_messages())
             
             await site.start()
             
@@ -70,26 +71,21 @@ class WebServer:
                 # Cleanup
                 if self.queue_task:
                     self.queue_task.cancel()
-                if self.progress_task:
-                    self.progress_task.cancel()
+                if self.client_task:
+                    self.client_task.cancel()
                 await runner.cleanup()
         
         asyncio.run(start_app())
 
-    async def process_progress(self):
+    async def process_client_messages(self):
         while True:
-            item = await self.progress_queue.get()
+            message = await self.client_queue.get()
             try:
-                await self.ws_clients[item["client_id"]].send_json({
-                    "type": "progress",
-                    "nodeId": item["nodeId"],
-                    "progress": item["progress"]
-                })
-                #await asyncio.sleep(0.02)
+                await self.ws_clients[message["client_id"]].send_json(message["data"])
             except Exception as e:
-                logger.error(f"Error sending progress update: {str(e)}")
+                logger.error(f"Error sending client message: {str(e)}")
             finally:
-                self.progress_queue.task_done()
+                self.client_queue.task_done()
 
     async def process_queue(self):
         while True:
@@ -206,6 +202,7 @@ class WebServer:
         nodes = graph["nodes"]
         paths = graph["paths"]
 
+        randomized_fields = {}
         for path in paths:
             for node in path:
                 module_name = nodes[node]["module"]
@@ -228,8 +225,32 @@ class WebServer:
                             ui_fields[p] = { "source": source_key, "type": params[p]["type"] }
                         elif params[p]["type"] == "3d":
                             ui_fields[p] = { "source": source_key, "type": params[p]["type"] }
-                    else:
+                    else:                           
                         args[p] = self.node_store[source_id].output[source_key] if source_id else params[p]["value"] if 'value' in params[p] else None                        
+                
+                # check if there is a field with the name __random__<param>
+                # randomize the field unless it has been already randomized
+                for key in args:
+                    if key.startswith('__random__') and args[key] is True:
+                        if node not in randomized_fields:
+                            randomized_fields[node] = []                      
+                        if key in randomized_fields[node]:
+                            continue
+                        randomized_fields[node].append(key)
+
+                        random_field = key.split('__random__')[1]
+                        args[random_field] = random.randint(0, (1<<53)-1)
+                        #self.node_store[node].params[random_field] = args[random_field]
+                        params[random_field]["value"] = args[random_field]
+                        await self.client_queue.put({
+                            "client_id": sid,
+                            "data": {
+                                "type": "updateValues",
+                                "nodeId": node,
+                                "key": random_field,
+                                "value": args[random_field]
+                            }
+                        })
 
                 if module_name not in self.module_map:
                     raise ValueError("Invalid module")
@@ -253,33 +274,41 @@ class WebServer:
                     raise TypeError(f"The class `{module_name}.{action_name}` is not callable. Ensure that the class has a __call__ method or extend it from `NodeBase`.")
                 
                 # initialize the progress bar
-                await self.ws_clients[sid].send_json({
-                    "type": "progress",
-                    "nodeId": node,
-                    "progress": -1
+                await self.client_queue.put({
+                    "client_id": sid,
+                    "data": {
+                        "type": "progress",
+                        "nodeId": node,
+                        "progress": -1
+                    }
                 })
 
                 try:
                     await self.event_loop.run_in_executor(None, lambda: self.node_store[node](**args))
-                    #self.node_store[node](**args)
                 except Exception as e:
                     logger.error(f"Error executing node {module_name}.{action_name}: {str(e)}")
                     raise e
                 
                 execution_time = self.node_store[node]._execution_time if hasattr(self.node_store[node], '_execution_time') else 0
 
-                updateValues = {}
-                if "onAfterNodeExecute" in self.module_map[module_name][action_name]:
-                    for event in self.module_map[module_name][action_name]["onAfterNodeExecute"]:
-                        if event["action"] == "updateValue":
-                            updateValues.update({ event["target"]: self.node_store[node].params[event["target"]] })
+                # updateValues = {}
+                # if "onAfterNodeExecute" in self.module_map[module_name][action_name]:
+                #     for event in self.module_map[module_name][action_name]["onAfterNodeExecute"]:
+                #         if event["action"] == "updateValue":
+                #             if node not in updateValues:
+                #                 updateValues[node] = {}
+                #             updateValues[node].update({event["target"]: self.node_store[node].params[event["target"]] })
+                #             #updateValues.update({event["target"]: self.node_store[node].params[event["target"]] })
 
-                await self.ws_clients[sid].send_json({
-                    "type": "executed",
-                    "nodeId": node,
-                    "time": f"{execution_time:.2f}",
-                    "updateValues": updateValues
-                    #"memory": f"{memory_usage/1024**3:.2f}"
+                await self.client_queue.put({
+                    "client_id": sid,
+                    "data": {
+                        "type": "executed",
+                        "nodeId": node,
+                        "time": f"{execution_time:.2f}",
+                        #"updateValues": updateValues
+                        #"memory": f"{memory_usage/1024**3:.2f}"
+                    }
                 })
 
                 logger.debug(f"Node {module_name}.{action_name} executed in {execution_time:.3f}s")
@@ -288,13 +317,26 @@ class WebServer:
 
                 for key in ui_fields:
                     value = self.node_store[node].output[ui_fields[key]["source"]]
-                    await self.ws_clients[sid].send_json({
-                        "type": ui_fields[key]["type"],
-                        "key": key,
-                        "nodeId": node,
-                        "data": self.to_base64(ui_fields[key]["type"], value)
+                    await self.client_queue.put({
+                        "client_id": sid,
+                        "data": {
+                            "type": ui_fields[key]["type"],
+                            "key": key,
+                            "nodeId": node,
+                            "data": self.to_base64(ui_fields[key]["type"], value)
+                        }
                     })
+                
+                await asyncio.sleep(0)
 
+        # if updateValues:
+        #     await self.client_queue.put({
+        #         "client_id": sid,
+        #         "data": {
+        #             "type": "updateValues",
+        #             "values": updateValues
+        #         }
+        #     })
 
     """
     WebSocket API

@@ -88,10 +88,10 @@ class NodeBase():
         values = self._validate_params(kwargs)
 
         # check if there is a field with the name __random__<param>
-        for key in values:
-            if key.startswith('__random__') and values[key] is True:
-                param = key.split('__random__')[1]
-                values[param] = random.randint(0, (1<<53)-1)
+        # for key in values:
+        #     if key.startswith('__random__') and values[key] is True:
+        #         param = key.split('__random__')[1]
+        #         values[param] = random.randint(0, (1<<53)-1)
 
         execution_time = time.time()
 
@@ -144,8 +144,8 @@ class NodeBase():
         # get the default values for the parameters
         defaults = get_module_params(self.module_name, self.class_name)
 
-        # filter out any input args that are not valid parameters
-        values = { key: values[key] for key in values if key in defaults }
+        # filter out any input args that are not valid parameters and exclude the special fields starting with __
+        values = { key: values[key] for key in values if key in defaults and not key.startswith('__') }
 
         # ensure the values are of the correct type
         for key in values:
@@ -204,11 +204,13 @@ class NodeBase():
             try:
                 progress = int((step_index + 1) / pipe._num_timesteps * 100)
                 asyncio.run_coroutine_threadsafe(
-                    web_server.progress_queue.put({
-                        "type": "progress",
-                        "nodeId": self.node_id,
-                        "progress": progress,
-                        "client_id": self._client_id
+                    web_server.client_queue.put({
+                        "client_id": self._client_id,
+                        "data": {
+                            "type": "progress",
+                            "nodeId": self.node_id,
+                            "progress": progress
+                        }
                     }), 
                     web_server.event_loop
                 )
