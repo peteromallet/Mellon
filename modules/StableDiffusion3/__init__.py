@@ -200,6 +200,15 @@ MODULE_MAP = {
                 'step': 0.05,
                 'group': { 'key': 'prompts_scale', 'label': 'Prompts Scale', 'display': 'collapse' },
             },
+            'noise': {
+                'label': 'Inject noise',
+                'type': 'float',
+                'default': 0.0,
+                'min': 0.0,
+                'max': 1.0,
+                'step': 0.01,
+                'group': { 'key': 'noise', 'label': 'Noise', 'display': 'collapse' },
+            },
         },
     },
 

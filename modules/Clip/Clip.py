@@ -1,6 +1,6 @@
 from transformers import CLIPTextModel, CLIPTextModelWithProjection, CLIPTokenizer
 from huggingface_hub import list_repo_files
-from utils.node_utils import NodeBase
+from mellon.NodeBase import NodeBase
 
 class CLIPTextEncoderLoader(NodeBase):
     def execute(self, model_id, dtype, device):

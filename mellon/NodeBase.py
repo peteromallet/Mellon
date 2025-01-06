@@ -28,32 +28,33 @@ def are_different(a, b):
     if type(a) != type(b):
         return True
     
-    # check if the lengths are different
     if isinstance(a, (list, tuple)):
         if len(a) != len(b):
             return True
         
-        for x, y in zip(a, b):
-            return are_different(x, y)
+        return any(are_different(x, y) for x, y in zip(a, b))
 
     if isinstance(a, dict):
         if a.keys() != b.keys():
             return True
-
-        for key in a:
-            return are_different(a[key], b[key])
+        
+        return any(are_different(a[k], b[k]) for k in a)
 
     if hasattr(a, 'dtype'):
         if not hasattr(b, 'dtype') or a.dtype != b.dtype:
             return True
 
     if hasattr(a, 'shape'):
-        if not hasattr(b, 'shape') or not torch.equal(a, b):
+        if not hasattr(b, 'shape') or a.shape != b.shape:
             return True
     
+    if isinstance(a, torch.Tensor):
+        return not torch.equal(a, b)
+
     if hasattr(a, '__dict__') and hasattr(b, '__dict__'):
-        return are_different(a.__dict__, b.__dict__)
-    
+        if a.__dict__ != b.__dict__:
+            return True
+
     if a != b:
         return True
 
@@ -155,13 +156,13 @@ class NodeBase():
                 type = (schema[key]['type'][0] if isinstance(schema[key]['type'], list) else schema[key]['type']).lower()
 
                 if type.startswith('int'):
-                    values[key] = int(values[key])
+                    values[key] = int(values[key]) if not isinstance(values[key], list) else [int(v) for v in values[key]]
                 elif type == 'float':
-                    values[key] = float(values[key])
+                    values[key] = float(values[key]) if not isinstance(values[key], list) else [float(v) for v in values[key]]
                 elif type.startswith('bool'):
-                    values[key] = bool(values[key])
+                    values[key] = bool(values[key]) if not isinstance(values[key], list) else [bool(v) for v in values[key]]
                 elif type.startswith('str'):
-                    values[key] = str(values[key]) if values[key] is not None else ''
+                    values[key] = str(values[key] or '') if not isinstance(values[key], list) else [str(v or '') for v in values[key]]
 
         # we perform a second pass for cross parameter validation when calling the postProcess function
         for key in values:
@@ -240,18 +241,31 @@ class NodeBase():
         return memory_manager.add_model(model, model_id, device=device, priority=priority)
 
     def mm_get(self, model_id):
+        model_id = model_id if isinstance(model_id, str) else model_id._mm_id if hasattr(model_id, '_mm_id') else None
         return memory_manager.get_model(model_id) if model_id else None
 
     def mm_load(self, model_id, device):
+        model_id = model_id if isinstance(model_id, str) else model_id._mm_id if hasattr(model_id, '_mm_id') else None
         return memory_manager.load_model(model_id, device) if model_id else None
 
     def mm_unload(self, model_id):
+        model_id = model_id if isinstance(model_id, str) else model_id._mm_id if hasattr(model_id, '_mm_id') else None
         return memory_manager.unload_model(model_id) if model_id else None
 
     def mm_update(self, model_id, model=None, priority=None, unload=True):
+        model_id = model_id if isinstance(model_id, str) else model_id._mm_id if hasattr(model_id, '_mm_id') else None
         return memory_manager.update_model(model_id, model=model, priority=priority, unload=unload) if model_id else None
     
-    def mm_try(self, func, device, exclude=None):
+    def mm_inference(self, func, device, exclude=None):
+        exclude_list = []
+        if exclude:
+            exclude = [exclude] if not isinstance(exclude, list) else exclude
+            for model in exclude:
+                if isinstance(model, str):
+                    exclude_list.append(model)
+                elif hasattr(model, '_mm_id'):
+                    exclude_list.append(model._mm_id)
+
         while True:
             try:
                 with torch.inference_mode():

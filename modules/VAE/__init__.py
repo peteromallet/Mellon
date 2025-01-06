@@ -18,25 +18,19 @@ MODULE_MAP = {
                 'display': 'autocomplete',
                 'no_validation': True,
             },
-            'device': {
-                'label': 'Device',
-                'type': 'string',
-                'options': device_list,
-                'default': default_device,
-            },
         },
     },
     'VAEEncode': {
         'label': 'VAE Encode',
-        'description': 'Encode an image into a latent space',
+        'description': 'Encode an image into the latent space',
         'category': 'vae',
         'style': {
             'maxWidth': 300,
         },
         'params': {
             'model': {
-                'label': 'VAE',
-                'type': 'vae',
+                'label': 'VAE | Pipeline',
+                'type': ['vae', 'pipeline'],
                 'display': 'input',
             },
             'images': {
@@ -56,6 +50,12 @@ MODULE_MAP = {
                 'display': 'slider',
                 'min': 1,
             },
+            'device': {
+                'label': 'Device',
+                'type': 'string',
+                'options': device_list,
+                'default': default_device,
+            },
         },
     },
     'VAEDecode': {
@@ -64,8 +64,8 @@ MODULE_MAP = {
         'category': 'vae',
         'params': {
             'model': {
-                'label': 'VAE',
-                'type': 'vae',
+                'label': 'VAE | Pipeline',
+                'type': ['vae', 'pipeline'],
                 'display': 'input',
             },
             'latents': {
@@ -77,6 +77,12 @@ MODULE_MAP = {
                 'label': 'Images',
                 'type': 'image',
                 'display': 'output',
+            },
+            'device': {
+                'label': 'Device',
+                'type': 'string',
+                'options': device_list,
+                'default': default_device,
             },
         },
     },

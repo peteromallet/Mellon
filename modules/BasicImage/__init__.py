@@ -1,3 +1,5 @@
+from utils.torch_utils import device_list, default_device
+
 MODULE_MAP = {
     'Preview': {
         'label': 'Preview Image',
@@ -5,9 +7,9 @@ MODULE_MAP = {
         'category': 'image',
         'params': {
             'vae': {
-                'label': 'VAE',
+                'label': 'VAE | Pipeline',
                 'display': 'input',
-                'type': ['vae', 'SD3Pipeline'],
+                'type': ['pipeline', 'vae'],
                 'description': 'VAE to decode latents. Required only if input images are latents.',
             },
             'images': {
@@ -35,6 +37,12 @@ MODULE_MAP = {
                 'display': 'ui',
                 'source': 'images_out',
                 'type': 'image',
+            },
+            'device': {
+                'label': 'Device',
+                'type': 'string',
+                'options': device_list,
+                'default': default_device,
             },
         },
     },
@@ -102,6 +110,93 @@ MODULE_MAP = {
                 'type': 'int',
                 'default': 8,
                 'min': 1
+            },
+        },
+    },
+
+    'Resize': {
+        'label': 'Resize',
+        'description': 'Resize an image',
+        'category': 'image',
+        'params': {
+            'images': {
+                'label': 'Images',
+                'display': 'input',
+                'type': 'image',
+            },
+            'images_out': {
+                'label': 'Images',
+                'display': 'output',
+                'type': 'image',
+            },
+            'new_width': {
+                'label': 'Width',
+                'display': 'output',
+                'type': 'int',
+            },
+            'new_height': {
+                'label': 'Height',
+                'display': 'output',
+                'type': 'int',
+            },
+            'width': {
+                'label': 'Width',
+                'type': 'int',
+                'default': 1024,
+                'min': 0,
+            },
+            'height': {
+                'label': 'Height',
+                'type': 'int',
+                'default': 1024,
+                'min': 0,
+            },
+            'method': {
+                'label': 'Method',
+                'type': 'string',
+                'options': ['stretch', 'keep aspect ratio', 'fit', 'pad'],
+                'default': 'stretch',
+            },
+            'resample': {
+                'label': 'Resample',
+                'type': 'string',
+                'options': ['nearest', 'box', 'bilinear', 'hamming', 'bicubic', 'lanczos'],
+                'default': 'bicubic',
+            },
+        },
+    },
+
+    'ScaleBy': {
+        'label': 'Scale By',
+        'description': 'Scale an image by a given factor',
+        'category': 'image',
+        'style': {
+            'maxWidth': 300,
+        },
+        'params': {
+            'images': {
+                'label': 'Images',
+                'display': 'input',
+                'type': 'image',
+            },
+            'images_out': {
+                'label': 'Images',
+                'display': 'output',
+                'type': 'image',
+            },
+            'factor': {
+                'label': 'Factor',
+                'type': 'float',
+                'default': 1.0,
+                'min': 0,
+                'max': 32,
+                'step': 0.05,
+            },
+            'resample': {
+                'label': 'Resample',
+                'type': 'string',
+                'options': ['nearest', 'box', 'bilinear', 'hamming', 'bicubic', 'lanczos'],
+                'default': 'bicubic',
             },
         },
     },

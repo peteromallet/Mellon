@@ -2,7 +2,54 @@ import torch
 from transformers import CLIPTextModel, CLIPTokenizer
 from diffusers import StableDiffusionPipeline, UNet2DConditionModel, AutoencoderKL
 from utils.torch_utils import device_list, toPIL
-from utils.node_utils import NodeBase
+from mellon.NodeBase import NodeBase
+from utils.hf_utils import is_local_files_only
+from config import config
+
+HF_TOKEN = config.hf['token']
+
+class UnetLoader(NodeBase):
+    def execute(self, model_id, dtype, device, **kwargs):
+        local_files_only = is_local_files_only(model_id)
+        
+        model = UNet2DConditionModel.from_pretrained(
+            model_id,
+            torch_dtype=dtype,
+            subfolder="unet",
+            token=HF_TOKEN,
+            local_files_only=local_files_only
+        )
+
+        mm_id = self.mm_add(model, priority=3)
+        
+        return { 'model': { 'unet': mm_id, 'device': device, 'model_id': model_id }}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class LoadUNet(NodeBase):
     def execute(self, model_id, variant, dtype, use_safetensors, device):

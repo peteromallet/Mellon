@@ -13,7 +13,7 @@ import traceback
 from utils.memory_manager import memory_flush
 from copy import deepcopy
 import random
-
+import signal
 class WebServer:
     def __init__(self, module_map: dict, host: str = "0.0.0.0", port: int = 8080, cors: bool = False, cors_route: str = "*"):
         self.module_map = module_map
@@ -34,6 +34,7 @@ class WebServer:
                              web.get('/custom_component/{module}/{component}', self.custom_component),
                              web.get('/custom_assets/{module}/{file_path}', self.custom_assets),
                              web.post('/graph', self.graph),
+                             web.post('/nodeExecute', self.node_execute),
                              web.delete('/clearNodeCache', self.clear_node_cache),
                              web.static('/assets', 'web/assets'),
                              web.get('/favicon.ico', self.favicon),
@@ -52,9 +53,26 @@ class WebServer:
                 cors.add(route)
 
     def run(self):
-        # TODO: need to do proper queue processing
         async def start_app():
+            shutdown_event = asyncio.Event()
             self.event_loop = asyncio.get_event_loop()
+
+            async def shutdown(signal_name):
+                logger.info(f"Received signal interrupt. Namarie!")
+                shutdown_event.set()
+
+                # Close all websocket connections immediately
+                for ws in list(self.ws_clients.values()):
+                    await ws.close(code=1000, message=b'Server shutting down')
+                self.ws_clients.clear()
+
+            # Set up signal handlers
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                self.event_loop.add_signal_handler(
+                    sig, 
+                    lambda s=sig: asyncio.create_task(shutdown(s.name))
+                )
+
             runner = web.AppRunner(self.app, client_max_size=1024**4)
             await runner.setup()
             site = web.TCPSite(runner, self.host, self.port)
@@ -66,13 +84,17 @@ class WebServer:
             await site.start()
             
             try:
-                await asyncio.Future()
+                await shutdown_event.wait()
             finally:
-                # Cleanup
-                if self.queue_task:
-                    self.queue_task.cancel()
-                if self.client_task:
-                    self.client_task.cancel()
+                # Cancel and wait for queue tasks
+                for task in [self.queue_task, self.client_task]:
+                    if task and not task.done():
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            pass
+                
                 await runner.cleanup()
         
         asyncio.run(start_app())
@@ -91,7 +113,10 @@ class WebServer:
         while True:
             item = await self.queue.get()
             try:
-                await self.graph_execution(item)
+                if "kwargs" in item:
+                    await self.node_execute_single(item)
+                else:
+                    await self.graph_execution(item)
             except Exception as e:
                 logger.error(f"Error processing queue task: {str(e)}")
                 logger.error(f"Error occurred in {traceback.format_exc()}")
@@ -195,7 +220,58 @@ class WebServer:
             "type": "graphQueued",
             "sid": graph["sid"]
         })
+    
+    async def node_execute(self, request):
+        data = await request.json()
+        await self.queue.put(data)
+        return web.json_response({
+            "type": "nodeQueued",
+            "sid": data["sid"],
+        })
+    
+    async def node_execute_single(self, data):
+        sid = data["sid"]
+        module = data["module"]
+        action = data["action"]
+        kwargs = data["kwargs"]
+        node = data["node"]
 
+        if module not in self.module_map:
+            raise ValueError("Invalid module")
+        if action not in self.module_map[module]:
+            raise ValueError("Invalid action")
+
+        if module.endswith(".custom"):
+            module = import_module(f"custom.{module.replace('.custom', '')}.{module.replace('.custom', '')}")
+        else:
+            module = import_module(f"modules.{module}.{module}")
+        action = getattr(module, action)
+
+        if not callable(action):
+            raise ValueError("Action is not callable")
+               
+        node = action()
+        node._client_id = sid
+
+        result = {}
+
+        try:
+            result = await self.event_loop.run_in_executor(None, lambda: node(**kwargs))
+        except Exception as e:
+            logger.error(f"Error executing node {module}.{action}: {str(e)}")
+            raise e
+
+        await self.client_queue.put({
+            "client_id": sid,
+            "data": {
+                "type": "single_executed",
+                "nodeId": node,
+                "module": module,
+                "action": action,
+                "result": result,
+            }
+        })
+    
     async def graph_execution(self, graph):
         #graph = await request.json()
         sid = graph["sid"]

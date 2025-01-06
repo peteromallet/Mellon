@@ -7,8 +7,8 @@ import logging
 logger = logging.getLogger('mellon')
 
 
-def memory_flush(gc_collect=False, deep=False):
-    if gc_collect or deep:
+def memory_flush(gc_collect=False, reset=False):
+    if gc_collect:
         gc.collect()
 
     if torch.cuda.is_available():
@@ -16,7 +16,7 @@ def memory_flush(gc_collect=False, deep=False):
         #torch.cuda.synchronize()
         torch.cuda.ipc_collect()
 
-        if deep:
+        if reset:
             for _, d in device_list.items():
                 torch.cuda.reset_max_memory_allocated(d['index'])
                 torch.cuda.reset_peak_memory_stats(d['index'])
@@ -71,10 +71,7 @@ class MemoryManager:
             # Attempt to load the model
             try:
                 x = x.to(device)
-                self.cache[model_id].update({
-                    'model': x,
-                    'device': device
-                })
+                self.cache[model_id]['device'] = device
                 return x
             
             except torch.OutOfMemoryError as e:
@@ -111,7 +108,8 @@ class MemoryManager:
 
         for m in model_id:
             if m in self.cache:
-                logger.debug(f"Deleting model {m}")
+                classname = self.cache[m]['model'].__class__.__name__ if hasattr(self.cache[m]['model'], '__class__') else 'Unknown'
+                logger.debug(f"Deleting model {classname}, id: {m}")
                 #self.unload_model(m)
                 del self.cache[m]['model']
                 del self.cache[m]

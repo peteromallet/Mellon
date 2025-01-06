@@ -1,13 +1,14 @@
 import torch
 from diffusers import AutoencoderKL
-from utils.node_utils import NodeBase
+from mellon.NodeBase import NodeBase
 from utils.hf_utils import is_local_files_only
 from utils.torch_utils import toPIL, toLatent
+from diffusers.models.attention_processor import AttnProcessor2_0, XFormersAttnProcessor
 
 class LoadVAE(NodeBase):
     #is_compiled = False
     
-    def execute(self, model_id, device):
+    def execute(self, model_id):
         #if not compile and self.is_compiled:
         #    self.mm_unload(vae)
 
@@ -17,8 +18,8 @@ class LoadVAE(NodeBase):
             local_files_only=is_local_files_only(model_id),
         )
 
-        vae = self.mm_add(vae, priority=2)
-        
+        vae._mm_id = self.mm_add(vae, priority=2)
+
         """
         if compile:
             # we free up all the GPU memory to perform the intensive compilation
@@ -33,59 +34,78 @@ class LoadVAE(NodeBase):
             compiled.decode = torch.compile(compiled.decode, mode='max-autotune', fullgraph=True)
             self.mm_update(vae, model=compiled)
             del compiled
-            memory_flush(deep=True)
+            memory_flush(rest=True)
             self.is_compiled = True
         """
 
-        return { 'model': { 'vae': vae, 'device': device } }
+        return { 'model': vae }
 
 class VAEEncode(NodeBase):
-    def execute(self, model, images, divisible_by):
-        device = model['device']
-        model_id = model['vae'] if 'vae' in model else model['model']
-
+    def execute(self, model, images, divisible_by, device):
+        vae = model.vae if hasattr(model, 'vae') else model
         if divisible_by > 1:
             from modules.BasicImage.BasicImage import ResizeToDivisible
             images = ResizeToDivisible()(images=images, divisible_by=divisible_by)['images_out']
         
-        latents = self.mm_try(
-            lambda: self.encode(model_id, images, device),
+        self.mm_load(vae, device)
+        latents = self.mm_inference(
+            lambda: self.encode(vae, images),
             device,
-            exclude=model_id
+            exclude=vae
         )
-
+        latents = latents.to('cpu')
         return { 'latents': latents }
     
-    def encode(self, model_id, images, device):
-        model = self.mm_get(model_id)
-        model = model.to(device)
+    def encode(self, model, images):
         images = toLatent(images).to(model.device, dtype=model.dtype)
-
         latents = model.encode(images).latent_dist.sample()
         latents = latents * model.config.scaling_factor
-        latents = latents.to('cpu')
-        del images, model
         return latents
 
 class VAEDecode(NodeBase):
-    def execute(self, model, latents):
-        device = model['device']
-        model_id = model['vae'] if 'vae' in model else model['model']
-
-        images = self.mm_try(
-            lambda: self.decode(model_id, latents, device),
+    def execute(self, model, latents, device):
+        vae = model.vae if hasattr(model, 'vae') else model
+        self.mm_load(vae, device)
+        images = self.mm_inference(
+            lambda: self.vae_decode(vae, latents),
             device,
-            exclude=model_id
+            exclude=vae
         )
 
         return { 'images': images }
     
-    def decode(self, model_id, latents, device):
-        model = self.mm_get(model_id)
-        model = model.to(device)
+    def vae_decode(self, model, latents):
+        dtype = model.dtype
+        
+        if dtype == torch.float16 and model.config.force_upcast:
+            self.upcast_vae(model)
+
+        latents = latents.to(dtype=next(iter(model.post_quant_conv.parameters())).dtype)
         latents = 1 / model.config['scaling_factor'] * latents
-        images = model.decode(latents.to(model.device, dtype=model.dtype), return_dict=False)[0][0]
+        images = model.decode(latents.to(model.device), return_dict=False)[0][0]
         del latents, model
         images = images / 2 + 0.5
         images = toPIL(images.to('cpu'))
         return images
+    
+    def upcast_vae(self, model):
+        dtype = model.dtype
+        if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+            new_dtype = torch.bfloat16
+        else:
+            new_dtype = torch.float32
+
+        model.to(dtype=new_dtype)
+        use_torch_2_0_or_xformers = isinstance(
+            model.decoder.mid_block.attentions[0].processor,
+            (
+                AttnProcessor2_0,
+                XFormersAttnProcessor,
+            ),
+        )
+        # if xformers or torch_2_0 is used attention block does not need
+        # to be in float32 which can save lots of memory
+        if use_torch_2_0_or_xformers:
+            model.post_quant_conv.to(dtype)
+            model.decoder.conv_in.to(dtype)
+            model.decoder.mid_block.to(dtype)

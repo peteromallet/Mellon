@@ -1,11 +1,11 @@
 from PIL import Image
 import torch
 from utils.torch_utils import toTensor, toPIL
-from utils.node_utils import NodeBase
-from utils.memory_manager import memory_manager
+from mellon.NodeBase import NodeBase
+from modules.VAE.VAE import VAEDecode
 
-class Preview(NodeBase):
-    def execute(self, images, vae):
+class Preview(VAEDecode):
+    def execute(self, images, vae, device):
         if isinstance(images, list) and isinstance(images[0], Image.Image):
             images = images[0]
 
@@ -18,31 +18,15 @@ class Preview(NodeBase):
         if not vae:
             raise ValueError("VAE is required to decode latents")
 
-        device = vae['device']
-        model_id = vae['vae'] if 'vae' in vae else vae['model']
-        model = self.mm_load(model_id, device)
+        if hasattr(vae, 'vae'):
+            vae = vae.vae
 
-        latents = 1 / model.config['scaling_factor'] * images
-        #latents = self.mm_flash_load(latents, device=device)
-
-        #with torch.no_grad():
-        with torch.inference_mode():
-            while True:
-                try:
-                    images = model.decode(latents.to(device, dtype=model.dtype), return_dict=False)[0][0]
-                    break
-                except torch.OutOfMemoryError as e:
-                    if memory_manager.unload_next(device, exclude=model_id):
-                        continue
-                    else:
-                        raise e
-                except Exception as e:
-                    raise e
-
-        del latents
-
-        images = (images / 2 + 0.5).to('cpu')
-        images = toPIL(images)
+        self.mm_load(vae, device)
+        images = self.mm_inference(
+            lambda: self.vae_decode(vae, images),
+            device,
+            exclude=vae,
+        )
 
         return { 'images_out': images,
                  'width': images.width,
@@ -62,6 +46,52 @@ class SaveImage(NodeBase):
 
         return
 
+class Resize(NodeBase):
+    def execute(self, images, width, height, method, resample):
+        if width == 0 and height == 0:
+            return { 'images_out': images, 'width': ow, 'height': oh }
+
+        resample = resample.upper()
+        if method == 'stretch':
+            images = images.resize((max(width, 1), max(height, 1)), resample=Image.Resampling[resample])
+        elif method == 'fit':
+            from PIL.ImageOps import fit
+            images = fit(images, (max(width, 1), max(height, 1)), method=Image.Resampling[resample])
+        elif method == 'pad':
+            from PIL.ImageOps import pad
+            images = pad(images, (max(width, 1), max(height, 1)), Image.Resampling[resample])
+        elif method == 'keep aspect ratio':
+            ow, oh = images.size
+            print(f"Original size: {ow}x{oh}")
+            if width == 0:
+                scale = height / oh
+                width = int(ow * scale)
+            elif height == 0:
+                scale = width / ow
+                height = int(oh * scale)
+            else:
+                scale = min(width / ow, height / oh)
+                new_width = int(ow * scale)
+                new_height = int(oh * scale)
+                # prevent rounding errors
+                if height / oh < width / ow:
+                    new_height = height
+                elif width / ow < height / oh:
+                    new_width = width
+
+            images = images.resize((max(new_width, 1), max(new_height, 1)), resample=Image.Resampling[resample])
+
+        return { 'images_out': images,
+                 'width': images.width,
+                 'height': images.height }
+
+class ScaleBy(NodeBase):
+    def execute(self, images, factor, resample):
+        images = images.resize((max(int(images.width * factor), 1), max(int(images.height * factor), 1)), resample=Image.Resampling[resample.upper()])
+        return { 'images_out': images,
+                 'width': images.width,
+                 'height': images.height }
+
 class ResizeToDivisible(NodeBase):
     def execute(self, images, divisible_by):
         from PIL.ImageOps import fit
@@ -69,7 +99,7 @@ class ResizeToDivisible(NodeBase):
         width, height = images.size
         width = width // divisible_by * divisible_by
         height = height // divisible_by * divisible_by
-        images = fit(images, (width, height), Image.Resampling.LANCZOS)
+        images = fit(images, (width, height), method=Image.Resampling.LANCZOS)
         return { 'images_out': images,
                  'width': width,
                  'height': height }

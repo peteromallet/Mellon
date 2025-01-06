@@ -1,7 +1,7 @@
 from config import config
 from utils.hf_utils import list_local_models
 from utils.torch_utils import device_list
-from utils.node_utils import NodeBase
+from mellon.NodeBase import NodeBase
 from diffusers import DiffusionPipeline
 import torch
 

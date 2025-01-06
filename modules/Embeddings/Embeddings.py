@@ -1,4 +1,4 @@
-from utils.node_utils import NodeBase
+from mellon.NodeBase import NodeBase
 import torch
 
 class CombineEmbeddings(NodeBase):

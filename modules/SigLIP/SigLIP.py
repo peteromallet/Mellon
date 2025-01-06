@@ -1,5 +1,5 @@
 
-from utils.node_utils import NodeBase
+from mellon.NodeBase import NodeBase
 from transformers import AutoProcessor, SiglipVisionModel
 
 class SigLIPLoader(NodeBase):
