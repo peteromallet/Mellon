@@ -30,7 +30,7 @@ def create_random_field(param):
             'default': False,
             'group': f"random-{param}",
             'icon': 'random',
-            'onChange': {'action': 'disable', 'target': param}
+            'onChange': {'action': 'disable', 'target': { True: [param], False: [] }}
         }
     }
 

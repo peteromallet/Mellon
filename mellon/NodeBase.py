@@ -6,7 +6,6 @@ import time
 from utils.memory_manager import memory_flush, memory_manager
 from mellon.server import web_server
 import nanoid
-import random
 
 def get_module_params(module_name, class_name):
     params = MODULE_MAP[module_name][class_name]['params'] if module_name in MODULE_MAP and class_name in MODULE_MAP[module_name] else {}
@@ -87,12 +86,6 @@ class NodeBase():
             return getattr(self, self.CALLBACK)(**params)
 
         values = self._validate_params(kwargs)
-
-        # check if there is a field with the name __random__<param>
-        # for key in values:
-        #     if key.startswith('__random__') and values[key] is True:
-        #         param = key.split('__random__')[1]
-        #         values[param] = random.randint(0, (1<<53)-1)
 
         execution_time = time.time()
 

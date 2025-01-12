@@ -240,8 +240,9 @@ class SDXLSampler(NodeBase):
                 cfg,
                 scheduler,
                 latents_in,
+                denoise_range,
                 device,
-                denoise_range
+                sync_latents,
         ):
         generator = torch.Generator('cpu').manual_seed(seed)
 

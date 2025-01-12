@@ -7,11 +7,6 @@ MODULE_MAP = {
         'description': 'Load the SDXL Pipeline',
         'category': 'loaders',
         'params': {
-            'pipeline': {
-                'label': 'SDXL Pipeline',
-                'type': 'pipeline',
-                'display': 'output',
-            },
             'unet_out': {
                 'label': 'UNet',
                 'type': 'UNet2DConditionModel',
@@ -25,6 +20,11 @@ MODULE_MAP = {
             'vae_out': {
                 'label': 'VAE',
                 'type': 'VAE',
+                'display': 'output',
+            },
+            'pipeline': {
+                'label': 'SDXL Pipeline',
+                'type': 'pipeline',
                 'display': 'output',
             },
             'model_id': {
@@ -144,7 +144,7 @@ MODULE_MAP = {
         'label': 'SDXL Sampler',
         'category': 'samplers',
         'style': {
-            'maxWidth': '320px',
+            'maxWidth': '360px',
         },
         'params': {
             'pipeline': {
@@ -174,7 +174,6 @@ MODULE_MAP = {
                 'default': 1024,
                 'min': 8,
                 'max': 8192,
-                'step': 8,
                 'group': 'dimensions',
             },
             'height': {
@@ -184,7 +183,6 @@ MODULE_MAP = {
                 'default': 1024,
                 'min': 8,
                 'max': 8192,
-                'step': 8,
                 'group': 'dimensions',
             },
             'resolution_picker': {
@@ -236,7 +234,7 @@ MODULE_MAP = {
                     { 'label': ' 1984×512 (3.88)', 'value': [1984, 512] },
                     { 'label': ' 2048×512 (4.0)',  'value': [2048, 512] },
                 ],
-                'target': ['width', 'height'],
+                'onChange': { 'action': 'set', 'target': ['width', 'height'] },
                 'group': 'dimensions',
             },
             'seed': {
@@ -287,6 +285,12 @@ MODULE_MAP = {
                 'display': 'input',
                 'type': ['latent', 'image'],
                 #'onChange': { 'action': 'disable', 'target': { 'connected': ['dimensions_group'], 'disconnected': ['strength'] } },
+            },
+            'sync_latents': {
+                'label': 'Sync with previous latents',
+                'type': 'boolean',
+                'default': False,
+                'onChange': { 'action': 'disable', 'target': { True: ['denoise_range', 'steps', 'dimensions_group'], False: [] } },
             },
             'denoise_range': {
                 'label': 'Denoise Range',

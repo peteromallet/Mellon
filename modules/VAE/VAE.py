@@ -80,7 +80,11 @@ class VAEDecode(NodeBase):
         if dtype == torch.float16 and model.config.force_upcast:
             self.upcast_vae(model)
 
-        latents = latents.to(dtype=next(iter(model.post_quant_conv.parameters())).dtype)
+        if hasattr(model, 'post_quant_conv'):
+            latents = latents.to(dtype=next(iter(model.post_quant_conv.parameters())).dtype)
+        else:
+            latents = latents.to(dtype=model.dtype)
+
         latents = 1 / model.config['scaling_factor'] * latents
         images = model.decode(latents.to(model.device), return_dict=False)[0][0]
         del latents, model

@@ -14,6 +14,7 @@ from utils.memory_manager import memory_flush
 from copy import deepcopy
 import random
 import signal
+
 class WebServer:
     def __init__(self, module_map: dict, host: str = "0.0.0.0", port: int = 8080, cors: bool = False, cors_route: str = "*"):
         self.module_map = module_map
@@ -174,10 +175,12 @@ class WebServer:
         for module_name, actions in self.module_map.items():
             for action_name, action in actions.items():
                 params = {}
+                groups = {}
                 if 'params' in action:
                     params = deepcopy(action['params'])
-                    # remove attributes that are not needed by the client
+                    
                     for p in params:
+                        # remove attributes that are not needed by the client
                         if 'postProcess' in params[p]:
                             del params[p]['postProcess']
 
@@ -187,6 +190,7 @@ class WebServer:
                     "action": action_name,
                     "category": self.slugify(action['category']) if 'category' in action else "default",
                     "params": params,
+                    "groups": groups
                 }
                 if 'style' in action:
                     nodes[f"{module_name}-{action_name}"]["style"] = action['style']
@@ -315,7 +319,7 @@ class WebServer:
                         randomized_fields[node].append(key)
 
                         random_field = key.split('__random__')[1]
-                        args[random_field] = random.randint(0, (1<<53)-1)
+                        args[random_field] = random.randint(0, (1<<53)-1) # TODO: make allow min/max values
                         #self.node_store[node].params[random_field] = args[random_field]
                         params[random_field]["value"] = args[random_field]
                         await self.client_queue.put({

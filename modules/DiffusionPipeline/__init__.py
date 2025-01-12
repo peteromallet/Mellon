@@ -118,7 +118,7 @@ MODULE_MAP = {
                     { 'label': ' 1344×768 (1.75)', 'value': [1344, 768] },
                     { 'label': ' 1280×720 (16:9)', 'value': [1280, 720] },
                 ],
-                'target': ['width', 'height'],
+                'onChange': { 'action': 'set', 'target': ['width', 'height'] },
                 'group': 'dimensions',
             },
             'prompt': {
