@@ -143,7 +143,7 @@ class SDXLSinglePromptEncoder(NodeBase):
         concat_embeds = []
         if text_encoders['text_encoder']:
             text_encoders['text_encoder'] = self.mm_load(text_encoders['text_encoder'], device)
-            prompt_embeds, _ = self.mm_auto_offload(
+            prompt_embeds, _ = self.mm_inference(
                 lambda: get_clip_prompt_embeds(prompt, text_encoders['tokenizer'], text_encoders['text_encoder'], clip_skip=clip_skip, noise=noise, scale=prompt_scale),
                 device,
                 exclude=text_encoders['text_encoder']
@@ -151,7 +151,7 @@ class SDXLSinglePromptEncoder(NodeBase):
             concat_embeds.append(prompt_embeds)
 
         text_encoders['text_encoder_2'] = self.mm_load(text_encoders['text_encoder_2'], device)
-        prompt_embeds_2, pooled_prompt_embeds_2 = self.mm_auto_offload(
+        prompt_embeds_2, pooled_prompt_embeds_2 = self.mm_inference(
             lambda: get_clip_prompt_embeds(prompt_2, text_encoders['tokenizer_2'], text_encoders['text_encoder_2'], clip_skip=clip_skip, noise=noise, scale=prompt_scale_2),
             device,
             exclude=text_encoders['text_encoder_2']
@@ -380,5 +380,3 @@ class SDXLSampler(NodeBase):
             latents._num_inference_steps = steps
 
         return { 'latents': latents, 'pipeline_out': pipeline }
-
-

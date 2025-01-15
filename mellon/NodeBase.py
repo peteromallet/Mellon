@@ -249,7 +249,7 @@ class NodeBase():
         model_id = model_id if isinstance(model_id, str) else model_id._mm_id if hasattr(model_id, '_mm_id') else None
         return memory_manager.update_model(model_id, model=model, priority=priority, unload=unload) if model_id else None
     
-    def mm_inference(self, func, device, exclude=None):
+    def mm_inference(self, func, device, exclude=None, no_grad=False):
         exclude_list = []
         if exclude:
             exclude = [exclude] if not isinstance(exclude, list) else exclude
@@ -261,7 +261,7 @@ class NodeBase():
 
         while True:
             try:
-                with torch.inference_mode():
+                with torch.inference_mode() if not no_grad else torch.no_grad():
                     return func()
             except torch.OutOfMemoryError as e:
                 if memory_manager.unload_next(device, exclude=exclude):
