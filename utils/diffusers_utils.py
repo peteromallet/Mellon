@@ -36,32 +36,33 @@ def dummy_vae(model_id):
 
 
 def get_clip_prompt_embeds(prompt, tokenizer, text_encoder, clip_skip=None, noise=0.0, scale=1.0):
-    max_length = tokenizer.model_max_length - 2 # we are adding special tokens at the beginning and end later
+    max_length = tokenizer.model_max_length
     bos = torch.tensor([tokenizer.bos_token_id]).unsqueeze(0).to(text_encoder.device)
     eos = torch.tensor([tokenizer.eos_token_id]).unsqueeze(0).to(text_encoder.device)
     one = torch.tensor([1]).unsqueeze(0).to(text_encoder.device)
     pad = tokenizer.pad_token_id
 
-    text_input_ids = tokenizer(prompt, truncation = False, return_tensors="pt").input_ids.to(text_encoder.device)
+    text_input_ids = tokenizer(prompt, truncation=False, return_tensors="pt").input_ids.to(text_encoder.device)
 
     # remove start and end tokens
     text_input_ids = text_input_ids[:, 1:-1]
 
-    chunks = text_input_ids.split(max_length, dim=-1)
+    # we create chunks of max_length-2, we add start and end tokens back later
+    chunks = text_input_ids.split(max_length-2, dim=-1)
 
     concat_embeds = []
     pooled_prompt_embeds = None
     for chunk in chunks:
         mask = torch.ones_like(chunk)
 
+        # add start and end tokens to each chunk
+        chunk = torch.cat([bos, chunk, eos], dim=-1)
+        mask = torch.cat([one, mask, one], dim=-1)
+
         # pad the chunk to the max length
         if chunk.shape[-1] < max_length:
             mask = torch.nn.functional.pad(mask, (0, max_length - mask.shape[-1]), value=0)
             chunk = torch.nn.functional.pad(chunk, (0, max_length - chunk.shape[-1]), value=pad)
-
-        # add start and end tokens to each chunk
-        chunk = torch.cat([bos, chunk, eos], dim=-1)
-        mask = torch.cat([one, mask, one], dim=-1)
 
         # encode the tokenized text
         prompt_embeds = text_encoder(chunk, attention_mask=mask, output_hidden_states=True)

@@ -151,10 +151,10 @@ class WebServer:
             module = path[0]
             component = path[1]
 
-        if module not in self.module_map:
-            raise web.HTTPNotFound(text=f"Module {module} not found")
+        #if module not in self.module_map:
+        #    raise web.HTTPNotFound(text=f"Module {module} not found")
 
-        response = web.FileResponse(f'modules/{module}/web/{component}.js')
+        response = web.FileResponse(f'custom/{module}/web/{component}.js')
         response.headers["Content-Type"] = "application/javascript"
         response.headers["Cache-Control"] = "no-cache"
         response.headers["Pragma"] = "no-cache"
@@ -165,10 +165,10 @@ class WebServer:
         module = request.match_info.get('module')
         file_path = request.match_info.get('file_path')
 
-        if module not in self.module_map:
-            raise web.HTTPNotFound(text=f"Module {module} not found")
+        #if module not in self.module_map:
+        #    raise web.HTTPNotFound(text=f"Module {module} not found")
 
-        return web.FileResponse(f'modules/{module}/web/assets/{file_path}')
+        return web.FileResponse(f'custom/{module}/web/assets/{file_path}')
 
     async def nodes(self, request):
         nodes = {}
