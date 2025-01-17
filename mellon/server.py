@@ -521,7 +521,7 @@ class WebServer:
     def to_base64(self, type, value):
         if type == "image":
             img_byte_arr = io.BytesIO()
-            value.save(img_byte_arr, format='PNG')
+            value.save(img_byte_arr, format='WEBP', quality=100)
             img_byte_arr = img_byte_arr.getvalue()
             return base64.b64encode(img_byte_arr).decode('utf-8')
         elif type == "3d":
