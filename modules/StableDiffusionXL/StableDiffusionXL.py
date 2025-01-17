@@ -244,7 +244,7 @@ class SDXLSampler(NodeBase):
                 device,
                 sync_latents,
         ):
-        generator = torch.Generator('cpu').manual_seed(seed)
+        generator = torch.Generator(device=device).manual_seed(seed)
 
         denoise_range_start = denoise_range[0] if denoise_range[0] > 0 else None
         denoise_range_end = denoise_range[1] if denoise_range[1] < 1 else None
