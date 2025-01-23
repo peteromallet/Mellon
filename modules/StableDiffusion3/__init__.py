@@ -2,91 +2,34 @@ from utils.torch_utils import device_list, default_device, str_to_dtype
 from utils.hf_utils import list_local_models
 
 MODULE_MAP = {
-    'SD3UnifiedLoader': {
-        'label': 'SD3 Unified Loader',
-        'category': 'samplers',
+    'SD3PipelineLoader': {
+        'label': 'SD3 Pipeline Loader',
+        'category': 'loaders',
         'params': {
-            'model': {
-                'label': 'SD3 Pipeline',
-                'type': 'SD3Pipeline',
-                'display': 'output',
-            },
-            'model_id': {
-                'label': 'Model ID',
-                'type': 'string',
-                'options': list_local_models(),
-                'display': 'autocomplete',
-                'no_validation': True,
-                'default': 'stabilityai/stable-diffusion-3.5-large',
-            },
-            'dtype': {
-                'label': 'Dtype',
-                'type': 'string',
-                'options': ['auto', 'float32', 'float16', 'bfloat16'],
-                'default': 'bfloat16',
-                'postProcess': str_to_dtype,
-            },
-            'device': {
-                'label': 'Device',
-                'type': 'string',
-                'options': device_list,
-                'default': default_device,
-            },
-            'load_t5': {
-                'label': 'Load T5 Encoder',
-                'type': 'boolean',
-                'default': True,
-            },
-        },
-    },
-
-    'SD3TransformerLoader': {
-        'label': 'SD3 Transformer loader',
-        'description': 'Load the Transformer of an SD3 model',
-        'category': 'samplers',
-        'params': {
-            'model': {
+            'transformer': {
                 'label': 'Transformer',
                 'type': 'SD3Transformer2DModel',
                 'display': 'output',
             },
-            'model_id': {
-                'label': 'Model ID',
-                'type': 'string',
-                'options': list_local_models(),
-                'display': 'autocomplete',
-                'no_validation': True,
-                'default': 'stabilityai/stable-diffusion-3.5-large',
-            },
-            'dtype': {
-                'label': 'dtype',
-                'options': ['auto', 'float32', 'float16', 'bfloat16'],
-                'default': 'bfloat16',
-                'postProcess': str_to_dtype,
-            },
-            'device': {
-                'label': 'Device',
-                'type': 'string',
-                'options': device_list,
-                'default': default_device,
-            },
-        },
-    },
-
-    'SD3TextEncodersLoader': {
-        'label': 'SD3 Text Encoders Loader',
-        'description': 'Load both the CLIP and T5 Text Encoders',
-        'category': 'text-encoders',
-        'params': {
-            'model': {
-                'label': 'SD3 Encoders',
-                'display': 'output',
+            'text_encoders': {
+                'label': 'Text Encoders',
                 'type': 'SD3TextEncoders',
+                'display': 'output',
+            },
+            'vae': {
+                'label': 'VAE',
+                'type': 'VAE',
+                'display': 'output',
+            },
+            'pipeline': {
+                'label': 'SD3 Pipeline',
+                'type': 'pipeline',
+                'display': 'output',
             },
             'model_id': {
                 'label': 'Model ID',
                 'type': 'string',
-                'options': list_local_models(),
+                'options': list_local_models(filters={"_class_name": r"Diffusion3Pipeline$"}),
                 'display': 'autocomplete',
                 'no_validation': True,
                 'default': 'stabilityai/stable-diffusion-3.5-large',
@@ -96,48 +39,101 @@ MODULE_MAP = {
                 'type': 'string',
                 'options': ['auto', 'float32', 'float16', 'bfloat16'],
                 'default': 'bfloat16',
-            },
-            'device': {
-                'label': 'Device',
-                'type': 'string',
-                'options': device_list,
-                'default': default_device,
+                'postProcess': str_to_dtype,
             },
             'load_t5': {
                 'label': 'Load T5 Encoder',
                 'type': 'boolean',
                 'default': True,
             },
+            'transformer_in': {
+                'label': 'Transformer',
+                'type': 'SD3Transformer2DModel',
+                'display': 'input',
+            },
+            'text_encoders_in': {
+                'label': 'Text Encoders',
+                'type': 'SD3TextEncoders',
+                'display': 'input',
+            },
+            'vae_in': {
+                'label': 'VAE',
+                'type': 'VAE',
+                'display': 'input',
+            },
         },
     },
 
-    'SD3SimplePromptEncoder': {
-        'label': 'SD3 Simple Prompt Encoder',
-        'description': 'Encode a prompt into embeddings for SD3',
-        'category': 'text-encoders',
-        'params': {
-            'text_encoders': {
-                'label': 'SD3 Encoders | SD3 Pipeline',
-                'display': 'input',
-                'type': ['SD3TextEncoders', 'SD3Pipeline'],
-            },
-            'embeds': {
-                'label': 'Prompt embeds',
-                'display': 'output',
-                'type': 'SD3Embeddings',
-            },
-            'prompt': {
-                'label': 'Positive Prompt',
-                'type': 'string',
-                'display': 'textarea',
-            },
-            'negative_prompt': {
-                'label': 'Negative Prompt',
-                'type': 'string',
-                'display': 'textarea',
-            },
-        },
-    },
+    # 'SD3TransformerLoader': {
+    #     'label': 'SD3 Transformer loader',
+    #     'description': 'Load the Transformer of an SD3 model',
+    #     'category': 'samplers',
+    #     'params': {
+    #         'model': {
+    #             'label': 'Transformer',
+    #             'type': 'SD3Transformer2DModel',
+    #             'display': 'output',
+    #         },
+    #         'model_id': {
+    #             'label': 'Model ID',
+    #             'type': 'string',
+    #             'options': list_local_models(),
+    #             'display': 'autocomplete',
+    #             'no_validation': True,
+    #             'default': 'stabilityai/stable-diffusion-3.5-large',
+    #         },
+    #         'dtype': {
+    #             'label': 'dtype',
+    #             'options': ['auto', 'float32', 'float16', 'bfloat16'],
+    #             'default': 'bfloat16',
+    #             'postProcess': str_to_dtype,
+    #         },
+    #         'device': {
+    #             'label': 'Device',
+    #             'type': 'string',
+    #             'options': device_list,
+    #             'default': default_device,
+    #         },
+    #     },
+    # },
+
+    # 'SD3TextEncodersLoader': {
+    #     'label': 'SD3 Text Encoders Loader',
+    #     'description': 'Load both the CLIP and T5 Text Encoders',
+    #     'category': 'text-encoders',
+    #     'params': {
+    #         'model': {
+    #             'label': 'SD3 Encoders',
+    #             'display': 'output',
+    #             'type': 'SD3TextEncoders',
+    #         },
+    #         'model_id': {
+    #             'label': 'Model ID',
+    #             'type': 'string',
+    #             'options': list_local_models(),
+    #             'display': 'autocomplete',
+    #             'no_validation': True,
+    #             'default': 'stabilityai/stable-diffusion-3.5-large',
+    #         },
+    #         'dtype': {
+    #             'label': 'Dtype',
+    #             'type': 'string',
+    #             'options': ['auto', 'float32', 'float16', 'bfloat16'],
+    #             'default': 'bfloat16',
+    #         },
+    #         'device': {
+    #             'label': 'Device',
+    #             'type': 'string',
+    #             'options': device_list,
+    #             'default': default_device,
+    #         },
+    #         'load_t5': {
+    #             'label': 'Load T5 Encoder',
+    #             'type': 'boolean',
+    #             'default': True,
+    #         },
+    #     },
+    # },
 
     'SD3PromptEncoder': {
         'label': 'SD3 Prompt Encoder',
@@ -146,7 +142,7 @@ MODULE_MAP = {
             'text_encoders': {
                 'label': 'SD3 Encoders | SD3 Pipeline',
                 'display': 'input',
-                'type': ['SD3TextEncoders', 'SD3Pipeline'],
+                'type': ['SD3TextEncoders', 'pipeline'],
             },
             'embeds': {
                 'label': 'Embeddings',
@@ -155,6 +151,11 @@ MODULE_MAP = {
             },
             'prompt': {
                 'label': 'Prompt',
+                'type': 'string',
+                'display': 'textarea',
+            },
+            'negative_prompt': {
+                'label': 'Negative Prompt',
                 'type': 'string',
                 'display': 'textarea',
             },
@@ -168,46 +169,65 @@ MODULE_MAP = {
                 'label': 'Prompt T5',
                 'type': 'string',
                 'display': 'textarea',
-                'group': { 'key': 'extra_prompts', 'label': 'Extra Prompts', 'display': 'collapse' },
+                'group': 'extra_prompts',
             },
-            'prompt_scale': {
-                'label': 'CLIP L',
-                'type': 'float',
-                'display': 'slider',
-                'default': 1.0,
-                'min': 0,
-                'max': 2,
-                'step': 0.05,
-                'group': { 'key': 'prompts_scale', 'label': 'Prompts Scale', 'display': 'collapse' },
+            'negative_prompt_2': {
+                'label': 'Negative CLIP G',
+                'type': 'string',
+                'display': 'textarea',
+                'group': 'extra_prompts',
             },
-            'prompt_scale_2': {
-                'label': 'CLIP G',
-                'type': 'float',
-                'default': 1.0,
-                'display': 'slider',
-                'min': 0,
-                'max': 2,
-                'step': 0.05,
-                'group': { 'key': 'prompts_scale', 'label': 'Prompts Scale', 'display': 'collapse' },
+            'negative_prompt_3': {
+                'label': 'Negative T5',
+                'type': 'string',
+                'display': 'textarea',
+                'group': 'extra_prompts',
             },
-            'prompt_scale_3': {
-                'label': 'T5',
-                'type': 'float',
-                'display': 'slider',
-                'default': 1.0,
-                'min': 0,
-                'max': 2,
-                'step': 0.05,
-                'group': { 'key': 'prompts_scale', 'label': 'Prompts Scale', 'display': 'collapse' },
-            },
-            'noise': {
-                'label': 'Inject noise',
+            'noise_clip': {
+                'label': 'Clip Noise Pos',
                 'type': 'float',
                 'default': 0.0,
-                'min': 0.0,
-                'max': 1.0,
+                'min': 0,
+                'max': 1,
                 'step': 0.01,
+                'display': 'slider',
                 'group': { 'key': 'noise', 'label': 'Noise', 'display': 'collapse' },
+            },
+            'noise_negative_clip': {
+                'label': 'ClipNoise Neg',
+                'type': 'float',
+                'default': 0.0,
+                'min': 0,
+                'max': 1,
+                'step': 0.01,
+                'display': 'slider',
+                'group': 'noise',
+            },
+            'noise_t5': {
+                'label': 'T5 Noise Pos',
+                'type': 'float',
+                'default': 0.0,
+                'min': 0,
+                'max': 1,
+                'step': 0.01,
+                'display': 'slider',
+                'group': 'noise',
+            },
+            'noise_negative_t5': {
+                'label': 'T5 Noise Neg',
+                'type': 'float',
+                'default': 0.0,
+                'min': 0,
+                'max': 1,
+                'step': 0.01,
+                'display': 'slider',
+                'group': 'noise',
+            },
+            'device': {
+                'label': 'Device',
+                'type': 'string',
+                'options': device_list,
+                'default': default_device,
             },
         },
     },
@@ -216,21 +236,16 @@ MODULE_MAP = {
         'label': 'SD3 Sampler',
         'category': 'samplers',
         'style': {
-            'maxWidth': '320px',
+            'maxWidth': '360px',
         },
         'params': {
-            'transformer': {
-                'label': 'Transformer | SD3 Pipeline',
+            'pipeline': {
+                'label': 'Transformer | Pipeline',
                 'display': 'input',
-                'type': ['SD3Transformer2DModel', 'SD3Pipeline'],
+                'type': ['SD3Transformer2DModel', 'pipeline'],
             },
             'prompt': {
                 'label': 'Prompt',
-                'display': 'input',
-                'type': ['SD3Embeddings', 'embeddings'],
-            },
-            'negative_prompt': {
-                'label': 'Negative prompt',
                 'display': 'input',
                 'type': ['SD3Embeddings', 'embeddings'],
             },
@@ -239,6 +254,11 @@ MODULE_MAP = {
                 'display': 'input',
                 'type': 'latent',
                 'onChange': { 'action': 'disable', 'target': { 'connected': ['dimensions_group'], 'disconnected': ['denoise'] } },
+            },
+            'pipeline_out': {
+                'label': 'Pipeline',
+                'display': 'output',
+                'type': 'pipeline',
             },
             'latents': {
                 'label': 'Latents',
@@ -304,14 +324,14 @@ MODULE_MAP = {
                 'min': 0,
                 'max': 100,
             },
-            'denoise': {
-                'label': 'Denoise',
+            'denoise_range': {
+                'label': 'Denoise Range',
                 'type': 'float',
-                'default': 1.0,
+                'display': 'range',
+                'default': [0, 1],
                 'min': 0,
                 'max': 1,
-                'display': 'slider',
-                'step': 0.05,
+                'step': 0.01,
             },
             'scheduler': {
                 'label': 'Scheduler',
@@ -338,6 +358,12 @@ MODULE_MAP = {
                 'default': False,
                 'group': 'scheduler',
             },
+            'device': {
+                'label': 'Device',
+                'type': 'string',
+                'options': device_list,
+                'default': default_device,
+            },
         },
     },
 }
@@ -351,7 +377,7 @@ quantization_params = {
             'torchao': 'TorchAO',
         },
         'default': 'none',
-        'onChange': 'showGroup',
+        'onChange': { 'action': 'show', 'target': { 'none': None, 'quanto': 'quanto_group', 'torchao': 'torchao_group' } },
     },
 
     # Quanto Quantization
@@ -359,7 +385,7 @@ quantization_params = {
         'label': 'Weights',
         'options': ['int2', 'int4', 'int8', 'float8'],
         'default': 'float8',
-        'group': { 'key': 'quanto', 'label': 'Quanto Quantization', 'display': 'group', 'hidden': True, 'direction': 'column' },
+        'group': { 'key': 'quanto', 'label': 'Quanto Quantization', 'display': 'group', 'direction': 'column' },
     },
     'quanto_activations': {
         'label': 'Activations',
@@ -384,7 +410,7 @@ quantization_params = {
             'int8_dynamic_activation_int8_weight': 'int8 weight + activation',
         },
         'default': 'int8_weight_only',
-        'group': { 'key': 'torchao', 'label': 'TorchAO Quantization', 'display': 'group', 'hidden': True, 'direction': 'column' },
+        'group': { 'key': 'torchao', 'label': 'TorchAO Quantization', 'display': 'group', 'direction': 'column' },
     },
     'torchao_individual_layers': {
         'label': 'Quantize each layer individually',
@@ -394,5 +420,5 @@ quantization_params = {
     },
 }
 
-MODULE_MAP['SD3TransformerLoader']['params'].update(quantization_params)
-MODULE_MAP['SD3TextEncodersLoader']['params'].update(quantization_params)
+#MODULE_MAP['SD3PipelineLoader']['params'].update(quantization_params)
+#MODULE_MAP['SD3TextEncodersLoader']['params'].update(quantization_params)

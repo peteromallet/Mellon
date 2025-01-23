@@ -107,24 +107,29 @@ def get_t5_prompt_embeds(prompt, tokenizer, text_encoder, num_images_per_prompt 
     prompt = [prompt] if isinstance(prompt, str) else prompt
     batch_size = len(prompt)
     # could be tokenizer.model_max_length but we are using a more conservative value (256)
-    max_length = max_sequence_length - 1  # we only need space for EOS token, T5 does not use BOS token
-    eos = torch.tensor([1]).unsqueeze(0).to(text_encoder.device) # </s> is the EOS token
+    max_length = max_sequence_length
+    eos = torch.tensor([1]).unsqueeze(0).to(text_encoder.device)
     pad = 0 # pad token is 0
 
     text_inputs_ids = tokenizer(prompt, truncation = False, add_special_tokens=True, return_tensors="pt").input_ids.to(text_encoder.device)
+
     # remove end token
     text_inputs_ids = text_inputs_ids[:, :-1]
 
-    chunks = text_inputs_ids.split(max_length, dim=-1)
+    chunks = text_inputs_ids.split(max_length-1, dim=-1)
 
     concat_embeds = []
     for chunk in chunks:
+        mask = torch.ones_like(chunk)
+
+        # add end token back
+        chunk = torch.cat([chunk, eos], dim=-1)
+        mask = torch.cat([mask, eos], dim=-1)
+
         # pad the chunk to the max length
         if chunk.shape[-1] < max_length:
+            mask = torch.nn.functional.pad(mask, (0, max_length - mask.shape[-1]), value=0)
             chunk = torch.nn.functional.pad(chunk, (0, max_length - chunk.shape[-1]), value=pad)
-
-        # add end token to each chunk
-        chunk = torch.cat([chunk, eos], dim=-1)
 
         # encode the tokenized text
         prompt_embeds = text_encoder(chunk)[0]

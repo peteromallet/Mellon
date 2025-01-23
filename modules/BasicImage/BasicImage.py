@@ -6,31 +6,28 @@ from modules.VAE.VAE import VAEDecode
 
 class Preview(VAEDecode):
     def execute(self, images, vae, device):
-        if isinstance(images, list) and isinstance(images[0], Image.Image):
-            images = images[0]
+        if isinstance(images, torch.Tensor):
+            if not vae:
+                raise ValueError("VAE is required to decode latents")
 
-        if isinstance(images, Image.Image):
-            # TODO: support multiple images
-            return { 'images_out': images,
-                     'width': images.width,
-                     'height': images.height }
+            if hasattr(vae, 'vae'):
+                vae = vae.vae
 
-        if not vae:
-            raise ValueError("VAE is required to decode latents")
+            self.mm_load(vae, device)
+            images = self.mm_inference(
+                lambda: self.vae_decode(vae, images),
+                device,
+                exclude=vae,
+            )
 
-        if hasattr(vae, 'vae'):
-            vae = vae.vae
+        if not isinstance(images, list):
+            images = [images]
 
-        self.mm_load(vae, device)
-        images = self.mm_inference(
-            lambda: self.vae_decode(vae, images),
-            device,
-            exclude=vae,
-        )
-
-        return { 'images_out': images,
-                 'width': images.width,
-                 'height': images.height }
+        return {
+            'images_out': images,
+            'width': images[0].width,
+            'height': images[0].height
+        }
 
 
 class LoadImage(NodeBase):

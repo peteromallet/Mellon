@@ -14,6 +14,7 @@ from utils.memory_manager import memory_flush
 from copy import deepcopy
 import random
 import signal
+import time
 
 class WebServer:
     def __init__(self, module_map: dict, host: str = "0.0.0.0", port: int = 8080, cors: bool = False, cors_route: str = "*"):
@@ -32,6 +33,7 @@ class WebServer:
 
         self.app.add_routes([web.get('/', self.index),
                              web.get('/nodes', self.nodes),
+                             web.get('/view/{format}/{node}/{key}/{index}', self.view),
                              web.get('/custom_component/{module}/{component}', self.custom_component),
                              web.get('/custom_assets/{module}/{file_path}', self.custom_assets),
                              web.post('/graph', self.graph),
@@ -58,7 +60,7 @@ class WebServer:
             shutdown_event = asyncio.Event()
             self.event_loop = asyncio.get_event_loop()
 
-            async def shutdown(signal_name):
+            async def shutdown():
                 logger.info(f"Received signal interrupt. Namárië!")
                 shutdown_event.set()
 
@@ -71,7 +73,7 @@ class WebServer:
             for sig in (signal.SIGINT, signal.SIGTERM):
                 self.event_loop.add_signal_handler(
                     sig,
-                    lambda s=sig: asyncio.create_task(shutdown(s.name))
+                    lambda: asyncio.create_task(shutdown())
                 )
 
             runner = web.AppRunner(self.app, client_max_size=1024**4)
@@ -185,17 +187,88 @@ class WebServer:
                             del params[p]['postProcess']
 
                 nodes[f"{module_name}-{action_name}"] = {
-                    "label": action['label'] if 'label' in action else f"{module_name}: {action_name}",
+                    "label": action.get('label', f"{module_name}: {action_name}"),
                     "module": module_name,
                     "action": action_name,
-                    "category": self.slugify(action['category']) if 'category' in action else "default",
+                    "category": self.slugify(action.get('category', 'default')),
                     "params": params,
-                    "groups": groups
+                    "groups": groups,
                 }
                 if 'style' in action:
                     nodes[f"{module_name}-{action_name}"]["style"] = action['style']
+                if 'resizable' in action:
+                    nodes[f"{module_name}-{action_name}"]["resizable"] = action['resizable']
 
         return web.json_response(nodes)
+    
+    async def view(self, request):
+        allowed_formats = ['webp', 'png', 'jpeg', 'glb']
+
+        format = request.match_info.get('format', 'webp').lower()
+        if format not in allowed_formats:
+            raise web.HTTPNotFound(text=f"Invalid format: {format}")
+
+        nodeId = request.match_info.get('node')
+        key = request.match_info.get('key')
+        node = self.node_store.get(nodeId)
+
+        if node is None:
+            raise web.HTTPNotFound(text=f"Node {nodeId} not found")
+        if key not in node.output:
+            raise web.HTTPNotFound(text=f"Key {key} not found in node {nodeId}")   
+        
+        value = node.output[key]
+        if value is None:
+            raise web.HTTPNotFound(text=f"No data found for {key}")
+        
+        if not isinstance(value, list):
+            value = [value]
+
+        index = int(request.match_info.get("index", 0))
+        if index < 0 or index >= len(value):
+            raise web.HTTPNotFound(text=f"Index {index} out of bounds for {key}")
+        
+        # get additional request parameters
+        quality = int(request.rel_url.query.get("quality", 100))
+        quality = max(0, min(100, quality))
+        scale = float(request.rel_url.query.get("scale", 1))
+        scale = max(0.01, min(2, scale))
+        filename = request.rel_url.query.get("filename", f"{key}_{index}.{format}")
+
+        value = value[index]
+        if scale != 1:
+            from PIL.Image import Resampling
+            width = int(value.width * scale)
+            height = int(value.height * scale)
+            value = value.resize((max(width, 1), max(height, 1)), resample=Resampling.BICUBIC)
+
+        # return the value as image
+        if format == "webp" or format == "png" or format == "jpeg":
+            byte_arr = io.BytesIO()
+            value.save(byte_arr, format=format.upper(), quality=quality)
+            byte_arr = byte_arr.getvalue()
+            return web.Response(
+                body=byte_arr,
+                content_type="image/webp",
+                headers={
+                    "Content-Disposition": f"inline; filename={filename}",
+                    "Content-Length": str(len(byte_arr)),
+                    "Cache-Control": "max-age=31536000, immutable",
+                }
+            )
+        elif format == "glb":
+            byte_arr = io.BytesIO()
+            byte_arr.write(value)
+            byte_arr = byte_arr.getvalue()
+            return web.Response(
+                body=byte_arr,
+                content_type="model/glb",
+                headers={
+                    "Content-Disposition": f"inline; filename={key}.glb",
+                    "Content-Length": str(len(byte_arr)),
+                    "Cache-Control": "max-age=31536000, immutable",
+                }
+            )
 
     async def clear_node_cache(self, request):
         data = await request.json()
@@ -293,12 +366,8 @@ class WebServer:
                 ui_fields = {}
                 args = {}
                 for p in params:
-                    source_id = params[p]["sourceId"] if "sourceId" in params[p] else None
-                    source_key = params[p]["sourceKey"] if "sourceKey" in params[p] else None
-
-                    # if there is a source key, it means that the value comes from a pipeline,
-                    # so we follow the connection to the source node and get the associated value
-                    # Otherwise we use the value in the params
+                    source_id = params[p].get("sourceId")
+                    source_key = params[p].get("sourceKey")
 
                     if "display" in params[p] and params[p]["display"] == "ui":
                         # store ui fields that need to be sent back to the client
@@ -307,7 +376,7 @@ class WebServer:
                         elif params[p]["type"] == "3d":
                             ui_fields[p] = { "source": source_key, "type": params[p]["type"] }
                     else:
-                        # handle list values (spawn)
+                        # handle list values (spawn input fields)
                         # if p ends with [d+], it means that the field is part of a list
                         if source_id and re.match(r".*\[\d+\]$", p):
                             spawn_key = re.sub(r"\[\d+\]$", "", p)
@@ -318,6 +387,9 @@ class WebServer:
 
                             args[spawn_key].append(self.node_store[source_id].output[source_key])
                         else:
+                            # if there is a source id, it means that the value comes from a pipeline,
+                            # so we follow the connection to the source node and get the associated value
+                            # Otherwise we use the value in the params
                             args[p] = self.node_store[source_id].output[source_key] if source_id else params[p].get("value")
 
                 # check if there is a field with the name __random__<param>
@@ -331,7 +403,7 @@ class WebServer:
                         randomized_fields[node].append(key)
 
                         random_field = key.split('__random__')[1]
-                        args[random_field] = random.randint(0, (1<<53)-1) # TODO: make allow min/max values
+                        args[random_field] = random.randint(0, (1<<53)-1) # TODO: allow min/max values
                         #self.node_store[node].params[random_field] = args[random_field]
                         params[random_field]["value"] = args[random_field]
                         await self.client_queue.put({
@@ -383,15 +455,6 @@ class WebServer:
 
                 execution_time = self.node_store[node]._execution_time if hasattr(self.node_store[node], '_execution_time') else 0
 
-                # updateValues = {}
-                # if "onAfterNodeExecute" in self.module_map[module_name][action_name]:
-                #     for event in self.module_map[module_name][action_name]["onAfterNodeExecute"]:
-                #         if event["action"] == "updateValue":
-                #             if node not in updateValues:
-                #                 updateValues[node] = {}
-                #             updateValues[node].update({event["target"]: self.node_store[node].params[event["target"]] })
-                #             #updateValues.update({event["target"]: self.node_store[node].params[event["target"]] })
-
                 await self.client_queue.put({
                     "client_id": sid,
                     "data": {
@@ -405,17 +468,31 @@ class WebServer:
 
                 logger.debug(f"Node {module_name}.{action_name} executed in {execution_time:.3f}s")
 
-                # TODO: this is just a placeholder for now
-
                 for key in ui_fields:
-                    value = self.node_store[node].output[ui_fields[key]["source"]]
+                    source = ui_fields[key]["source"]
+                    source_value = self.node_store[node].output[source]
+                    length = len(source_value) if isinstance(source_value, list) else 1
+                    format = 'webp' if ui_fields[key]["type"] == 'image' else 'glb'
+                    data = []
+                    for i in range(length):
+                        if length > 1:
+                            scale = 0.5 if source_value[i].width > 1024 or source_value[i].height > 1024 else 1
+                        else:
+                            scale = 0.5 if source_value[i].width > 2048 or source_value[i].height > 2048 else 1
+                        data.append({
+                            "url": f"/view/{format}/{node}/{source}/{i}?scale={scale}&t={time.time()}",
+                            "width": source_value[i].width,
+                            "height": source_value[i].height
+                        })
+
                     await self.client_queue.put({
                         "client_id": sid,
                         "data": {
                             "type": ui_fields[key]["type"],
                             "key": key,
                             "nodeId": node,
-                            "data": self.to_base64(ui_fields[key]["type"], value)
+                            "data": data
+                            #"data": self.to_base64(ui_fields[key]["type"], value)
                         }
                     })
 

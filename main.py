@@ -8,13 +8,17 @@ logging.basicConfig(level=config.log['level'], format="%(asctime)s [%(levelname)
 logger = logging.getLogger('mellon')
 
 # random seed generation
-#torch.cuda.manual_seed(0)
-#torch.cuda.manual_seed_all(0)
-#torch.backends.cudnn.deterministic = True
-#torch.backends.cudnn.benchmark = False
-#np.random.seed(0)
-#random.seed(0)
-#os.environ['PYTHONHASHSEED'] = str(0)
+# import numpy as np
+#import random
+# torch.cuda.manual_seed(0)
+# torch.cuda.manual_seed_all(0)
+# torch.backends.cudnn.deterministic = True
+# torch.backends.cudnn.benchmark = False
+# np.random.seed(0)
+# random.seed(0)
+# os.environ['PYTHONHASHSEED'] = str(0)
+# os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+# torch.use_deterministic_algorithms(True)
 
 # huggingface cache directory
 if config.hf['cache_dir']:

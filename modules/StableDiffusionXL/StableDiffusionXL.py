@@ -6,6 +6,7 @@ from utils.hf_utils import is_local_files_only
 from utils.diffusers_utils import get_clip_prompt_embeds
 import torch
 from modules.VAE.VAE import VAEEncode
+import random
 import logging
 logger = logging.getLogger('mellon')
 
@@ -238,13 +239,23 @@ class SDXLSampler(NodeBase):
                 seed,
                 steps,
                 cfg,
+                num_images,
                 scheduler,
                 latents_in,
                 denoise_range,
                 device,
                 sync_latents,
         ):
-        generator = torch.Generator(device=device).manual_seed(seed)
+        #generator = [torch.Generator(device=device).manual_seed(seed + i) for i in range(num_images)]
+        generator = []
+
+        random_state = random.getstate()
+        random.seed(seed)
+        for _ in range(num_images):
+            generator.append(torch.Generator(device=device).manual_seed(seed))
+            # there is a very slight chance that the seed is the same as the previous one, I don't think it's a big deal
+            seed = random.randint(0, (1<<53)-1)
+        random.setstate(random_state)
 
         denoise_range_start = denoise_range[0] if denoise_range[0] > 0 else None
         denoise_range_end = denoise_range[1] if denoise_range[1] < 1 else None
@@ -274,24 +285,10 @@ class SDXLSampler(NodeBase):
         # if the pipeline doesn't have the first text encoder, this is likely the refiner
         # so we need only the embeddings for the second text encoder
         if pipeline.text_encoder is None and positive['prompt_embeds'].shape[-1] > 1280:
-            print(positive['prompt_embeds'].shape, negative['prompt_embeds'].shape)
             positive['prompt_embeds'] = positive['prompt_embeds'][:, :, 768:]
             negative['prompt_embeds'] = negative['prompt_embeds'][:, :, 768:]
-            print(positive['prompt_embeds'].shape, negative['prompt_embeds'].shape)
 
-        # 3. Create a dummy VAE
-        # We don't need the VAE for sampling, but we need to pass something to the pipeline
-        dummy_vae = AutoencoderKL(
-            in_channels=3,
-            out_channels=3,
-            down_block_types=["DownEncoderBlock2D", "DownEncoderBlock2D", "DownEncoderBlock2D", "DownEncoderBlock2D"],
-            up_block_types=["UpDecoderBlock2D", "UpDecoderBlock2D", "UpDecoderBlock2D", "UpDecoderBlock2D"],
-            block_out_channels=[128, 256, 512, 512],
-            layers_per_block=2,
-            latent_channels=4,
-        )
-
-        # 4. Latents or Images input
+        # 3. Latents or Images input
         denoising_start = None
         denoising_end = denoise_range_end
         image_latents = None
@@ -313,8 +310,19 @@ class SDXLSampler(NodeBase):
             denoising_end = max(denoising_end, denoising_start + 0.01)
             logger.warning(f"Denoise range value error. Denoising end increased to: {denoising_end}")
 
-        # 5. Run the denoise loop
+        # 4. Run the denoise loop
         def denoise():
+            # We don't need the VAE for sampling, but we need to pass something to the pipeline
+            dummy_vae = AutoencoderKL(
+                in_channels=3,
+                out_channels=3,
+                down_block_types=["DownEncoderBlock2D", "DownEncoderBlock2D", "DownEncoderBlock2D", "DownEncoderBlock2D"],
+                up_block_types=["UpDecoderBlock2D", "UpDecoderBlock2D", "UpDecoderBlock2D", "UpDecoderBlock2D"],
+                block_out_channels=[128, 256, 512, 512],
+                layers_per_block=2,
+                latent_channels=4,
+            )
+
             sampling_config = {
                 'generator': generator,
                 'prompt_embeds': positive['prompt_embeds'].to(device, dtype=pipeline.unet.dtype),
@@ -329,6 +337,7 @@ class SDXLSampler(NodeBase):
                 'callback_on_step_end': self.pipe_callback,
                 'denoising_start': denoising_start,
                 'denoising_end': denoising_end,
+                'num_images_per_prompt': num_images,
             }
 
             if image_latents is not None:
@@ -364,7 +373,7 @@ class SDXLSampler(NodeBase):
             sampling_pipe.watermark = None
 
             latents = sampling_pipe(**sampling_config).images
-            del sampling_pipe, sampling_config
+            del sampling_pipe, sampling_config, dummy_vae
             return latents
 
         self.mm_load(pipeline.unet, device)

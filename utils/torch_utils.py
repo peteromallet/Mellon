@@ -69,7 +69,13 @@ def toTensor(image):
 
 def toPIL(tensor):
     from torchvision.transforms import v2 as tt
-    return tt.ToPILImage()(tensor.clamp(0, 1).float())
+    if len(tensor.shape) == 3:
+        tensor = tensor.unsqueeze(0)
+    images = []
+    for t in tensor:
+        images.append(tt.ToPILImage()(t.clamp(0, 1).float()))
+
+    return images
 
 def toLatent(image):
     from torchvision.transforms import v2 as tt

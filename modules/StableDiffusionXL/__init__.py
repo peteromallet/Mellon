@@ -258,6 +258,13 @@ MODULE_MAP = {
                 'min': 0,
                 'max': 100,
             },
+            'num_images': {
+                'label': 'Num Images',
+                'type': 'int',
+                'default': 1,
+                'min': 1,
+                'max': 1000,
+            },
             'scheduler': {
                 'label': 'Scheduler',
                 'display': 'select',
