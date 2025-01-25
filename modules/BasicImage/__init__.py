@@ -68,6 +68,7 @@ MODULE_MAP = {
             'path': {
                 'label': 'Path',
                 'type': 'string',
+                'group': 'file',
             },
             'images': {
                 'label': 'Image',

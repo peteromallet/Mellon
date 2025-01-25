@@ -64,6 +64,12 @@ class WebServer:
                 logger.info(f"Received signal interrupt. Namárië!")
                 shutdown_event.set()
 
+                # we don't need to gracefully unload models when exiting
+                # this speeds up the shutdown process
+                for node in list(self.node_store.values()):
+                    if node._mm_model_ids:
+                        node.FORCE_UNLOAD = False
+
                 # Close all websocket connections immediately
                 for ws in list(self.ws_clients.values()):
                     await ws.close(code=1000, message=b'Server shutting down')
@@ -281,6 +287,7 @@ class WebServer:
 
         for node in nodeId:
             if node in self.node_store:
+                self.node_store[node] = None
                 del self.node_store[node]
 
         memory_flush(gc_collect=True)

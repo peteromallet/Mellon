@@ -61,6 +61,7 @@ def are_different(a, b):
 
 class NodeBase():
     CALLBACK = 'execute'
+    FORCE_UNLOAD = True
 
     def __init__(self, node_id=None):
         self.node_id = node_id
@@ -95,7 +96,7 @@ class NodeBase():
             # delete previously loaded models
             # TODO: delete a model only if something changed about it
             if self._mm_model_ids:
-                memory_manager.delete_model(self._mm_model_ids)
+                memory_manager.delete_model(self._mm_model_ids, unload=self.FORCE_UNLOAD)
                 self._mm_model_ids = []
 
             try:
@@ -127,7 +128,7 @@ class NodeBase():
         del self.params, self.output # TODO: check if this actually works with cuda
 
         if self._mm_model_ids:
-            memory_manager.delete_model(self._mm_model_ids)
+            memory_manager.delete_model(self._mm_model_ids, unload=self.FORCE_UNLOAD)
 
         memory_flush(gc_collect=True)
 
