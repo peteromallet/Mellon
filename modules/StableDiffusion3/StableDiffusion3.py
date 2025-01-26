@@ -98,7 +98,7 @@ class SD3PipelineLoader(NodeBase):
         }
 
 class SD3TransformerLoader(NodeBase, NodeQuantization):
-    def execute(self, model_id, dtype, quantization, **kwargs):
+    def execute(self, model_id, dtype, compile, quantization, **kwargs):
         import os
         model_id = model_id or 'stabilityai/stable-diffusion-3.5-large'
 
@@ -129,12 +129,17 @@ class SD3TransformerLoader(NodeBase, NodeQuantization):
         if quantization != 'none' and not quantization_config:
             transformer_model = self.quantize(quantization, model=transformer_model._mm_id, **kwargs)
 
+        if compile:
+            from utils.memory_manager import memory_manager
+            from utils.torch_utils import compile
+            memory_manager.unload_all(exclude=transformer_model._mm_id)
+            transformer_model = compile(transformer_model)
+            self.mm_update(transformer_model._mm_id, model=transformer_model)
+
         return { 'model': transformer_model }
 
 
 class SD3TextEncodersLoader(NodeBase, NodeQuantization):
-    FORCE_UNLOAD = True
-
     def execute(self, model_id, dtype, load_t5, quantization, **kwargs):
         model_id = model_id or 'stabilityai/stable-diffusion-3.5-large'
 
@@ -370,63 +375,65 @@ class SD3Sampler(NodeBase):
         elif positive['prompt_embeds'].shape[1] < negative['prompt_embeds'].shape[1]:
             positive['prompt_embeds'] = torch.nn.functional.pad(positive['prompt_embeds'], (0, 0, 0, negative['prompt_embeds'].shape[1] - positive['prompt_embeds'].shape[1]))
 
-        # 3. Create a dummy VAE
-        dummy_vae = AutoencoderKL(
-            in_channels=3,
-            out_channels=3,
-            down_block_types=['DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'],
-            up_block_types=['UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D'],
-            block_out_channels=[128, 256, 512, 512],
-            layers_per_block=2,
-            latent_channels=16,
-        ).to(device)
-
-        # 4. Run the denoise loop
+        # 3. Run the denoise loop
         pipelineCls = StableDiffusion3Pipeline if latents_in is None else StableDiffusion3Img2ImgPipeline
 
-        sampling_pipe = pipelineCls.from_pretrained(
-            pipeline.config._name_or_path,
-            transformer=pipeline.transformer,
-            text_encoder=None,
-            text_encoder_2=None,
-            text_encoder_3=None,
-            tokenizer=None,
-            tokenizer_2=None,
-            tokenizer_3=None,
-            scheduler=sampling_scheduler,
-            vae=dummy_vae,
-            local_files_only=True,
-        )
+        def sampling():
+            dummy_vae = AutoencoderKL(
+                in_channels=3,
+                out_channels=3,
+                down_block_types=['DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'],
+                up_block_types=['UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D'],
+                block_out_channels=[128, 256, 512, 512],
+                layers_per_block=2,
+                latent_channels=16,
+            )
 
-        sampling_config = {
-            'generator': generator,
-            'prompt_embeds': positive['prompt_embeds'].to(device, dtype=pipeline.transformer.dtype),
-            'pooled_prompt_embeds': positive['pooled_prompt_embeds'].to(device, dtype=pipeline.transformer.dtype),
-            'negative_prompt_embeds': negative['prompt_embeds'].to(device, dtype=pipeline.transformer.dtype),
-            'negative_pooled_prompt_embeds': negative['pooled_prompt_embeds'].to(device, dtype=pipeline.transformer.dtype),
-            'width': width,
-            'height': height,
-            'guidance_scale': cfg,
-            'num_inference_steps': steps,
-            'output_type': "latent",
-            'callback_on_step_end': self.pipe_callback,
-            'mu': mu,
-        }
+            sampling_pipe = pipelineCls.from_pretrained(
+                pipeline.config._name_or_path,
+                transformer=pipeline.transformer,
+                text_encoder=None,
+                text_encoder_2=None,
+                text_encoder_3=None,
+                tokenizer=None,
+                tokenizer_2=None,
+                tokenizer_3=None,
+                scheduler=sampling_scheduler,
+                local_files_only=True,
+                vae=dummy_vae.to(device),
+            )
 
-        if latents_in is not None:
-            sampling_config['width'] = None
-            sampling_config['height'] = None
-            sampling_config['image'] = latents_in
-            sampling_config['strength'] = 1 - (denoise_range[0] or 0)
+            sampling_config = {
+                'generator': generator,
+                'prompt_embeds': positive['prompt_embeds'].to(device, dtype=pipeline.transformer.dtype),
+                'pooled_prompt_embeds': positive['pooled_prompt_embeds'].to(device, dtype=pipeline.transformer.dtype),
+                'negative_prompt_embeds': negative['prompt_embeds'].to(device, dtype=pipeline.transformer.dtype),
+                'negative_pooled_prompt_embeds': negative['pooled_prompt_embeds'].to(device, dtype=pipeline.transformer.dtype),
+                'width': width,
+                'height': height,
+                'guidance_scale': cfg,
+                'num_inference_steps': steps,
+                'output_type': "latent",
+                'callback_on_step_end': self.pipe_callback,
+                'mu': mu,
+            }
+
+            if latents_in is not None:
+                sampling_config['width'] = None
+                sampling_config['height'] = None
+                sampling_config['image'] = latents_in
+                sampling_config['strength'] = 1 - (denoise_range[0] or 0)
+
+            latents = sampling_pipe(**sampling_config).images
+            del sampling_pipe, sampling_config, dummy_vae
+            return latents
 
         self.mm_load(pipeline.transformer, device)
         latents = self.mm_inference(
-            lambda: sampling_pipe(**sampling_config).images,
+            sampling,
             device,
             exclude=pipeline.transformer
         )
         latents = latents.to('cpu')
-
-        del sampling_pipe, sampling_config, dummy_vae
 
         return { 'latents': latents, 'pipeline_out': pipeline }

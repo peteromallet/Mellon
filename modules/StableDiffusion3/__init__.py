@@ -52,7 +52,7 @@ MODULE_MAP = {
     'SD3TransformerLoader': {
         'label': 'SD3 Transformer loader',
         'description': 'Load the Transformer of an SD3 model',
-        'category': 'samplers',
+        'category': 'loaders',
         'params': {
             'model': {
                 'label': 'Transformer',
@@ -73,13 +73,18 @@ MODULE_MAP = {
                 'default': 'bfloat16',
                 'postProcess': str_to_dtype,
             },
+            'compile': {
+                'label': 'Compile',
+                'type': 'boolean',
+                'default': False,
+            },
         },
     },
 
     'SD3TextEncodersLoader': {
         'label': 'SD3 Text Encoders Loader',
         'description': 'Load both the CLIP and T5 Text Encoders',
-        'category': 'text-encoders',
+        'category': 'loaders',
         'params': {
             'model': {
                 'label': 'SD3 Encoders',
@@ -115,7 +120,7 @@ MODULE_MAP = {
             'text_encoders': {
                 'label': 'SD3 Encoders | SD3 Pipeline',
                 'display': 'input',
-                'type': ['SD3TextEncoders', 'pipeline'],
+                'type': 'pipeline',
             },
             'embeds': {
                 'label': 'Embeddings',
@@ -215,7 +220,7 @@ MODULE_MAP = {
             'pipeline': {
                 'label': 'Transformer | Pipeline',
                 'display': 'input',
-                'type': ['SD3Transformer2DModel', 'pipeline'],
+                'type': 'pipeline',
             },
             'prompt': {
                 'label': 'Prompt',
