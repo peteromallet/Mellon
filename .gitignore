@@ -25,3 +25,6 @@ __pycache__
 
 .venv
 venv
+
+collect_codebase.py
+codebase.txt

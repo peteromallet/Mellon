@@ -196,6 +196,8 @@ class WebServer:
                     nodes[f"{module_name}-{action_name}"]["style"] = action['style']
                 if 'resizable' in action:
                     nodes[f"{module_name}-{action_name}"]["resizable"] = action['resizable']
+                if 'type' in action:
+                    nodes[f"{module_name}-{action_name}"]["type"] = action['type']
 
         return web.json_response(nodes)
     

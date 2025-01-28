@@ -964,11 +964,7 @@ def list_devices():
             }
 
         devices[f"{host}cpu"] = cpu
-    else:
-        key = f"{host}cpu"
-        default_device = key
-        devices[key] = cpu
-    '''
+
     elif torch.mps.is_available():
         key = f"{host}mps"
         default_device = key
@@ -980,8 +976,11 @@ def list_devices():
             "total_memory": None,
             #"name": "MPS"
         }
-    '''
 
+    else:
+        key = f"{host}cpu"
+        default_device = key
+        devices[key] = cpu
 
     return devices, default_device
 
@@ -1019,6 +1018,15 @@ def toLatent(image):
         image = image.unsqueeze(0)
 
     return image
+
+def compile(model):
+    torch._inductor.config.conv_1x1_as_mm = True
+    torch._inductor.config.coordinate_descent_tuning = True
+    torch._inductor.config.epilogue_fusion = False
+    torch._inductor.config.coordinate_descent_check_all_directions = True
+    model.to(memory_format=torch.channels_last)
+
+    return torch.compile(model, mode='max-autotune', fullgraph=True)
 
 ================================================================================
 FILE: ./mellon/NodeBase.py
@@ -1604,6 +1612,8 @@ class WebServer:
                     nodes[f"{module_name}-{action_name}"]["style"] = action['style']
                 if 'resizable' in action:
                     nodes[f"{module_name}-{action_name}"]["resizable"] = action['resizable']
+                if 'type' in action:
+                    nodes[f"{module_name}-{action_name}"]["type"] = action['type']
 
         return web.json_response(nodes)
     
@@ -5983,9 +5993,9 @@ from utils.hf_utils import list_local_models
 MODULE_MAP = {
     'HelloWorldAgain': {
         'label': 'HelloWorld',
-        'category': 'loaders',
+        'category': 'HelloWorld',
+        'type': 'tool',
         'params': {
- 
             'color': {
                 'label': 'Color',
                 'display': 'color',                
@@ -5995,7 +6005,7 @@ MODULE_MAP = {
                 'type': 'pipeline',
                 'display': 'output',
             },
-        },
+        }
     }
 }
 
@@ -6375,7 +6385,7 @@ import {
   Viewport
 } from '@xyflow/react';
 import { shallow } from 'zustand/shallow';
-import { useNodeState, NodeState, CustomNodeType } from './stores/nodeStore';
+import { useNodeState, NodeState, CustomNodeType, getLocalStorageKey } from './stores/nodeStore';
 import { useNodeRegistryState, NodeRegistryState } from './stores/nodeRegistryStore';
 import { useWebsocketState, WebsocketState } from './stores/websocketStore';
 
@@ -6439,9 +6449,12 @@ export default function App() {
 
   // Save viewport position when it changes
   const onMoveEnd = (_: MouseEvent | TouchEvent | null, viewport: Viewport) => {
-    const workflow = JSON.parse(localStorage.getItem('workflow') || '{}');
-    workflow.viewport = viewport;
-    localStorage.setItem('workflow', JSON.stringify(workflow));
+    const { mode } = useNodeState.getState();
+    const key = getLocalStorageKey(mode);
+    const stored = localStorage.getItem(key) || '{}';
+    const data = JSON.parse(stored);
+    data.viewport = viewport;
+    localStorage.setItem(key, JSON.stringify(data));
   };
   
   // TODO: probably need to use useCallback
@@ -6457,17 +6470,14 @@ export default function App() {
       if (!flow.type) {
         flow.type = 'workflow';
       }
-      // Store the workflow in localStorage before loading it
-      localStorage.setItem('workflow', JSON.stringify(flow));
+
+      // Store the workflow in the appropriate localStorage key
+      const key = getLocalStorageKey(flow.type);
+      localStorage.setItem(key, JSON.stringify(flow));
       
       // Now load it through the store which will handle setting the mode
-      loadWorkflowFromStorage();
-      
-      // Set viewport after loading workflow
-      const { x = 0, y = 0, zoom = 1 } = flow.viewport || {};
-      setViewport({ x, y, zoom });
+      loadWorkflowFromStorage(flow.type);
     };
-
     reader.readAsText(file);
   };
 
@@ -6532,7 +6542,9 @@ export default function App() {
 
   // Get stored viewport or use defaults
   const defaultViewport = (() => {
-    const stored = localStorage.getItem('workflow');
+    const { mode } = useNodeState.getState();
+    const key = getLocalStorageKey(mode);
+    const stored = localStorage.getItem(key);
     if (stored) {
       const { viewport } = JSON.parse(stored);
       if (viewport) {
@@ -6661,6 +6673,7 @@ type NodeType = {
         module: string
         action: string
         category: string
+        type?: string
         params?: { [key: string]: any }
     }
 }
@@ -6831,6 +6844,12 @@ function formatAPIData(node: CustomNodeType, edges: Edge[]): APINodeData {
     };
 }
 
+export function getLocalStorageKey(mode: WorkflowType): string {
+    return mode === 'workflow' ? 'workflow' : 'tool';
+}
+
+const LAST_MODE_KEY = 'last-mode';
+
 export type NodeState = {
     nodes: CustomNodeType[];
     edges: Edge[];
@@ -6848,32 +6867,35 @@ export type NodeState = {
 
     setNodeExecuted: (id: string, cache: boolean, time: number, memory: number) => void;
 
-    exportGraph: (sid: string) => GraphExport;
+    loadWorkflowFromStorage: (mode?: WorkflowType) => void;
     updateLocalStorage: () => void;
-    loadWorkflowFromStorage: () => void;
+    exportGraph: (sid: string) => GraphExport;
 };
 
 export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
     nodes: [],
     edges: [],
-    mode: 'workflow',  // default
+    mode: (() => {
+        const lastMode = localStorage.getItem(LAST_MODE_KEY);
+        return (lastMode === 'workflow' || lastMode === 'tool') ? lastMode : 'workflow';
+    })(),  // initialize with last mode or default to 'workflow'
 
-    loadWorkflowFromStorage: () => {
-        const stored = localStorage.getItem('workflow');
+    loadWorkflowFromStorage: (overrideMode) => {
+        const currentMode = overrideMode ?? get().mode;
+        const key = getLocalStorageKey(currentMode);
+        const stored = localStorage.getItem(key);
+
         if (stored) {
             const data: StoredWorkflow = JSON.parse(stored);
-
-            // default if missing
-            if (!data.type) data.type = 'workflow';
-
             set({
                 nodes: data.nodes || [],
                 edges: data.edges || [],
-                mode: data.type
+                mode: data.type ?? currentMode
             });
+            // Save the current mode as the last active mode
+            localStorage.setItem(LAST_MODE_KEY, currentMode);
         } else {
-            // no workflow in storage
-            set({ nodes: [], edges: [], mode: 'workflow' });
+            set({ nodes: [], edges: [] });
         }
     },
 
@@ -7075,7 +7097,9 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
 
     updateLocalStorage: () => {
         const { nodes, edges, mode } = get();
-        const stored = localStorage.getItem('workflow');
+        const key = getLocalStorageKey(mode);
+
+        const stored = localStorage.getItem(key);
         let viewport = { x: 0, y: 0, zoom: 1 };
         if (stored) {
             const parsed = JSON.parse(stored);
@@ -7088,7 +7112,9 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
             edges,
             viewport
         };
-        localStorage.setItem('workflow', JSON.stringify(data));
+        localStorage.setItem(key, JSON.stringify(data));
+        // Save the current mode as the last active mode
+        localStorage.setItem(LAST_MODE_KEY, mode);
     },
 }));
 
@@ -8405,7 +8431,6 @@ const selectNodeState = (state: NodeState) => ({
   mode: state.mode,
   nodes: state.nodes,
   edges: state.edges,
-  updateLocalStorage: state.updateLocalStorage,
 });
 
 const groupBy = (field: string, nodeRegistry: any) => {
@@ -8436,7 +8461,7 @@ const groupBy = (field: string, nodeRegistry: any) => {
 export default function LeftSidebar() {
   const theme = useTheme()
   const { nodeRegistry } = useNodeRegistryState(selectNodeRegistryState, shallow);
-  const { mode, nodes, edges, updateLocalStorage } = useNodeState(selectNodeState, shallow);
+  const { mode, nodes, edges } = useNodeState(selectNodeState, shallow);
 
   const [localMode, setLocalMode] = useState<WorkflowType>(mode);
 
@@ -8448,9 +8473,16 @@ export default function LeftSidebar() {
   // handle toggle
   const handleModeChange = (_: any, newMode: WorkflowType | null) => {
     if (!newMode) return; // user clicked same toggle
+    
+    // 1) Save the old mode
+    useNodeState.getState().updateLocalStorage();
+    
+    // 2) Switch mode in the store
     useNodeState.setState({ mode: newMode });
-    setLocalMode(newMode);
-    updateLocalStorage();
+    setLocalMode(newMode); // keep local UI state in sync
+
+    // 3) Load from the new mode's local storage
+    useNodeState.getState().loadWorkflowFromStorage();
   };
 
   // Local node search state, the code will hide the nodes that don't match the search term instead of removing them from the DOM
@@ -8478,8 +8510,20 @@ export default function LeftSidebar() {
   };
 
   const groupedNodes = useMemo(() => {
-    // First get the base grouped nodes
-    const grouped = tabValue === 0 ? groupBy('module', nodeRegistry) : groupBy('category', nodeRegistry);
+    // First filter by mode
+    const filteredByMode = Object.fromEntries(
+      Object.entries(nodeRegistry).filter(([_, nodeData]) => {
+        if (mode === 'tool') {
+          return nodeData.type === 'tool';
+        } else {
+          // "workflow" mode => show nodes with type === "workflow" OR no type
+          return !nodeData.type || nodeData.type === 'workflow';
+        }
+      })
+    );
+
+    // Then group the filtered nodes
+    const grouped = tabValue === 0 ? groupBy('module', filteredByMode) : groupBy('category', filteredByMode);
 
     // If there's a search filter, only include nodes that match
     if (filteredNodes) {
@@ -8492,7 +8536,7 @@ export default function LeftSidebar() {
     }
 
     return grouped;
-  }, [nodeRegistry, filteredNodes, tabValue]);
+  }, [nodeRegistry, filteredNodes, tabValue, mode]);
 
   return (
     <Box
