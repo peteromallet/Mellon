@@ -1,0 +1,84 @@
+#MELLON
+
+##FUND
+###ARC
+Node-based ML sys => Server(py+aiohttp) orchestrates exec/model mgmt/deps/memory + Client(React+TS+ReactFlow) real-time graph UI via ws
+
+###CAP
+1) Load/unload HF/custom models
+2) Graph-based data flow
+3) Dep-aware exec(1 node/time)
+4) Real-time partial updates
+
+###FLOW
+1) Client sends graph+paths
+2) Server seq exec in dep order
+3) Partial results->client ws
+4) Client displays progress
+
+##CORE
+###INOUT
+Nodes have inbound(inputs w display:'input'/'ui') + outbound(outputs w 'output'). Execution: gather inbounds->execute->produce outbounds
+
+###EXEC
+Client builds dep paths(topological), server runs them sequentially (no concurrency), partial updates possible. Single-node test => POST /nodeExecute
+
+##INST
+1) Clone repo
+2) Install python deps(aiohttp,torch,diffusers...) + client deps(node≥18)
+3) config.ini => server ports,hf tokens,paths
+4) Run server(py main.py), run client(npm run dev)
+
+##COMP
+###SVC
+Handles REST(/graph,/nodeExecute,/clearNodeCache,/view/{fmt}/{node}/{key}/{idx},/ws) + device mgmt + seq exec + partial ws. Memory mgmt can unload models if OOM
+
+###GRAPH
+Server receives JSON graph+paths => executes 1 node/time => streams partial results
+
+###WS
+GET /ws => messages: welcome(session), progress(-1=indeterminate), image, 3d, executed(no mem usage), error
+
+###CLI
+React+TS+ReactFlow => flow diagram w node/edge, node param config, real-time updates. Zustand for state. "custom" display => loads external script from /custom_component/{module}/{component}
+
+##API
+REST endpoints:
+- GET /nodes => node defs(MODULE_MAP)
+- POST /graph => submit full graph
+- POST /nodeExecute => single node
+- DELETE /clearNodeCache => clear data
+- GET /view/{fmt}/{node}/{key}/{idx} => stored output
+- GET /ws => open websocket
+- GET /custom_component/... => custom UI scripts
+- GET /custom_assets/... => static for custom modules
+
+WS events:
+- welcome(sid)
+- progress
+- image
+- 3d
+- executed
+- error
+
+##CONF
+config.ini sections: [server](host,port,cors), [logging](level), [huggingface](token,cache_dir), [paths](data,temp), [environ], [app](global_seed)
+
+##NIS
+###MODMAP
+Nodes grouped by modules => each node def: {label,category,params,resizable,style,...}
+
+###PARAMS
+param keys => type("int"/"float"/"string"/"bool"/"image"/"latent"/array), display("input"/"output"/"text"/"checkbox"/"slider"/"custom"/...), default, spawn(true => multiple inbound), group, hidden, disabled, postProcess(server validation), onChange(dynamic UI rules), options(choice list), source(custom script path)
+
+##DEV
+###BACK
+Node dev => create module w MODULE_MAP + NodeBase classes => override execute(...) => register. Integrate HF pipelines. Memory manager tries to unload on OOM. Errors => "error" ws message
+###FRONT
+Custom UI => display:"custom", source:"Module/Component". Loaded from /custom_component/..., global React injected, one component per file
+
+##OPS
+Security/perf: placeholder. Monitoring => logs + nvidia-smi. OOM => attempt unload. Check connections + websockets
+
+##EXAMPLE
+Basic flow => model loader->prompt encoder->sampler->preview. Advanced => multi-prompt merges, custom fields, 3rd-party modules

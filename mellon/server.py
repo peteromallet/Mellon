@@ -40,6 +40,7 @@ class WebServer:
                              web.post('/nodeExecute', self.node_execute),
                              web.delete('/clearNodeCache', self.clear_node_cache),
                              web.static('/assets', 'web/assets'),
+                             web.static('/custom', 'custom'),
                              web.get('/favicon.ico', self.favicon),
                              web.get('/ws', self.websocket_handler)])
 
@@ -148,15 +149,12 @@ class WebServer:
         module = request.match_info.get('module')
         component = request.match_info.get('component')
 
-        path = component.split('/')
-        if len(path) > 1:
-            module = path[0]
-            component = path[1]
+        # Handle full paths
+        full_path = f"{module}/{component}"
+        if '/' in component:
+            full_path = f"{component}"
 
-        #if module not in self.module_map:
-        #    raise web.HTTPNotFound(text=f"Module {module} not found")
-
-        response = web.FileResponse(f'custom/{module}/web/{component}.js')
+        response = web.FileResponse(f'{full_path}.js')
         response.headers["Content-Type"] = "application/javascript"
         response.headers["Cache-Control"] = "no-cache"
         response.headers["Pragma"] = "no-cache"
@@ -292,6 +290,14 @@ class WebServer:
 
     async def graph(self, request):
         graph = await request.json()
+        # If graph has "type" and it's "tool", 
+        # we might reject or do something else
+        if graph.get("type") == "tool":
+            return web.json_response({
+                "error": "Global graph execution is not available for tool mode."
+            }, status=400)
+
+        # else do your normal workflow logic
         await self.queue.put(graph)
         return web.json_response({
             "type": "graphQueued",
